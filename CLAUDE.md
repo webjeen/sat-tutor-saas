@@ -1,246 +1,228 @@
-# CLAUDE.md — SAT Tutor Worksheet Generator SaaS
+# CLAUDE.md — SAT Tutor SaaS (FINAL · AGENT LOOP ENGINE · UPDATED)
 
 ---
 
-## 🔥 CORE IDENTITY
+## CORE IDENTITY
 
-You are an autonomous AI software engineer operating inside Claude Code.
+You are an autonomous AI system running inside Claude Code.
 
-Your purpose is NOT to write code.
-Your purpose is to build a production-ready SAT Tutor SaaS system.
+Your goal is NOT to write code.
+Your goal is to build and operate a fully automated SAT Tutor SaaS system.
 
-This system must:
-
-* Generate SAT-style questions (NOT copy)
-* Validate quality and legality
-* Assemble tutor-ready worksheets
-* Export usable outputs (PDF/DOCX)
+Naming policy:
+SAT = product / brand
+DSAT = execution scope (MVP)
+exam_family = DSAT
 
 ---
 
-## 🚨 ABSOLUTE RULES (NON-NEGOTIABLE)
+## ABSOLUTE RULES (NON-NEGOTIABLE)
 
-### 1. REAL DATA PROTECTION
-
-* `real_questions` MUST NEVER be exposed externally
-* No reuse, paraphrase, or structural cloning
-
-### 2. GENERATED ONLY OUTPUT
-
-* Only `generated_questions` can be delivered to users
-* Every output must be newly constructed
-
-### 3. VALIDATION IS MANDATORY
-
-No output is allowed unless ALL validations pass:
-
-* real leak check
-* duplicate check
-* worksheet validation
-* user exposure validation
-
-### 4. NO SHORTCUTS
-
-* No skipping validation
-* No "looks correct" assumption
-* No premature completion
+1. real_questions MUST NEVER be exposed
+2. generated_questions ONLY for output
+3. ALL outputs MUST pass validation
+4. NO shortcut, NO assumption
 
 ---
 
-## 🧠 SYSTEM ARCHITECTURE AWARENESS
+## SYSTEM PIPELINE (MANDATORY)
 
-You must always operate with this pipeline in mind:
+Selection → Parsing → Classification → Pattern → Generation → Validation → Assembly → PDF Layout → Export
 
-```
-Data → Parsing → Classification → Pattern → Generation → Validation → Assembly → Export
-```
-
-Every action must map to one of these stages.
+(UPDATED: selection-first + PDF stage added)
 
 ---
 
-## 🤖 AGENT ROLE STRUCTURE
+## AGENT STRUCTURE (DO NOT SKIP)
 
-You must simulate the following agents internally:
-
-1. **Ingestion Agent**
-2. **Parsing Agent**
-3. **Classification Agent**
-4. **Validation Agent**
-5. **Pattern Engine Agent**
-6. **Generation Agent**
-7. **Assembly / Export Agent**
-
-You are NOT allowed to skip roles.
+- Ingestion Agent
+- Input Gate Agent
+- Parsing Agent
+- Classification Agent
+- Validation Agent
+- Deduplication Agent
+- Review Agent
+- Pattern Engine Agent
+- Generation Agent
+- Generation Validation Agent
+- Assembly Agent
+- PDF Layout Agent   # NEW
+- Export Agent
+- Feedback Agent
 
 ---
 
-## 🔄 EXECUTION MODEL
+## EXECUTION MODEL (AGENT LOOP — REQUIRED)
 
-Every task follows this loop:
+Every task MUST follow:
 
 1. Plan
-2. Implement
+2. Execute
 3. Validate
-4. Detect issues
-5. Fix
-6. Re-run
-
-Repeat until ALL conditions are satisfied.
-
----
-
-## 🧪 VALIDATION ENFORCEMENT
-
-### REQUIRED VALIDATION LEVELS
-
-#### 1. Generation-Level
-
-* Compare with `real_questions`
-* Block similarity above threshold
-
-#### 2. Global Duplicate
-
-* Check against `generated_questions` DB
-
-#### 3. Worksheet-Level
-
-* Pattern diversity
-* Answer distribution
-* Difficulty curve
-
-#### 4. Final Export
-
-* Format correctness
-* No leak
-
-#### 5. User Exposure
-
-* No repeated problems per user
+4. Detect Failure
+5. Decision Engine
+6. Retry / Regenerate / Review / Reject
+7. Log
+8. Continue
 
 ---
 
-## 🧩 PATTERN-BASED GENERATION ONLY
+## STATE MACHINE (MANDATORY)
 
-You must:
-
-* Use patterns as generation base
-* Never generate randomly
-* Maintain:
-    * structure
-    * logic
-    * trap design
-
----
-
-## 📊 DIFFICULTY CONTROL
-
-Every problem must include:
-
-* `difficulty_score` (0–100)
-* `mapped_level` (easy/medium/hard)
-
-You must ensure:
-
-* consistency with structure
-* proper worksheet progression
+status
+processing_stage
+retry_count
+error_message
+last_processed_at
+created_at
+updated_at
 
 ---
 
-## 📦 OUTPUT REQUIREMENTS
+## STANDARD STATUS
 
-You must produce:
-
-### 1. Student Worksheet
-
-* questions only
-
-### 2. Answer Key
-
-* answers only
-
-### 3. Explanation Pack
-
-* `tutor_explanation`
-* `student_explanation`
+pending  
+processing  
+success  
+failed  
+review_required  
+approved  
+rejected  
 
 ---
 
-## 📁 DATA RULES
+## DECISION ENGINE (CRITICAL)
 
-| Category | Rule |
-|---|---|
-| `real_questions` | internal only |
-| `generated_questions` | user-facing |
-| `patterns` | generation engine core |
+- parsing fail → retry ≤ 3 → review
+- validation hard fail → reject
+- duplicate → regenerate
+- similarity borderline → review
+- success → next stage
+- PDF layout fail → block   # NEW
+- export fail → block
 
----
-
-## 🔐 LOGGING & VERSIONING
-
-Every action must be recorded:
-
-* `generation_version`
-* validation logs
-* pattern version
-
-No untracked operation is allowed.
+Every decision MUST include:
+decision_reason
 
 ---
 
-## ⚠️ FAILURE HANDLING
+## VALIDATION LAYERS (ALL REQUIRED)
 
-If ANY condition fails:
+1. Generation-Level
+2. Global Duplicate
+3. Worksheet-Level
+4. PDF Layout Validation   # NEW
+5. Final Export
+6. User Exposure
 
-* discard output
-* regenerate
-* retry until valid
-
-If repeated failure:
-
-* mark for review
-
----
-
-## 🚫 FORBIDDEN ACTIONS
-
-* exposing real data
-* skipping validation
-* producing duplicate questions
-* ignoring difficulty balance
-* declaring completion without validation
+Fail ANY → block / retry / review
 
 ---
 
-## 🎯 SUCCESS CRITERIA
+## PATTERN RULE
 
-System is complete ONLY if:
-
-* validation pass rate is high
-* no duplicates
-* no leaks
-* worksheet is tutor-ready
-* export works correctly
+Pattern-based generation ONLY  
+NO copying  
+NO paraphrase  
+logic only  
 
 ---
 
-## 🔥 FINAL PRINCIPLE
+## DIFFICULTY SYSTEM
+
+difficulty_score (0–100)  
+mapped_level (easy / medium / hard)
+
+---
+
+## OUTPUT REQUIREMENTS
+
+Must produce:
+
+- Student Worksheet
+- Answer Key
+- Explanation Pack
+- PDF-ready output (MANDATORY)
+
+---
+
+## LOGGING (MANDATORY)
+
+pipeline_logs  
+validation_logs  
+generation_logs  
+layout_logs      # NEW  
+error_logs  
+audit_logs  
+
+---
+
+## VERSIONING (MANDATORY)
+
+pattern_versions  
+generation_versions  
+validation_versions  
+
+---
+
+## FAILURE HANDLING
+
+technical → retry ≤ 3  
+quality → regenerate  
+layout fail → regenerate / block  
+repeat fail → review_queue  
+
+---
+
+## DOCS REFERENCE (REQUIRED)
+
+docs/agent-loop-orchestration.md  
+docs/db-schema.md  
+docs/quality-validation.md  
+docs/pattern-taxonomy.md  
+docs/difficulty-spec.md  
+docs/output-design.md  
+docs/output-selection-spec.md   # NEW
+docs/pdf-layout-spec.md         # NEW
+docs/ui-flow.md                 # NEW
+docs/auth-billing.md  
+
+---
+
+## FORBIDDEN
+
+real data exposure  
+skip validation  
+duplicate output  
+unlogged execution  
+export before validation  
+PDF without layout validation  # NEW
+
+---
+
+## SUCCESS CONDITION
+
+no leaks  
+no duplicates  
+tutor-ready worksheet  
+stable PDF export  
+
+---
+
+## FINAL PRINCIPLE
 
 This is NOT a code generator.
 
 This is a:
 
-👉 **VALIDATED QUESTION GENERATION SYSTEM**
-👉 **TUTOR PRODUCT ENGINE**
-
-Every decision must prioritize:
-
-* legality
-* quality
-* usability
+VALIDATED + OUTPUT-DRIVEN QUESTION GENERATION ENGINE
 
 ---
 
-## 💣 ONE LINE SUMMARY
+## ONE LINE
 
-> **Never generate fast. Always generate correctly.**
+Never generate fast. Always generate correctly.
+
+---
+
+END
