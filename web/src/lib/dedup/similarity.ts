@@ -1,5 +1,4 @@
-import { Fingerprint } from "./types";
-import { normalize } from "./fingerprint";
+import { Fingerprint, StructuredContent } from "./types";
 
 export function jaccardSimilarity(a: string, b: string): number {
   const setA = new Set(a.split(" ").filter(Boolean));
@@ -15,6 +14,66 @@ export function jaccardSimilarity(a: string, b: string): number {
 
   const union = setA.size + setB.size - intersection;
   return union === 0 ? 0 : intersection / union;
+}
+
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const SAT_BOILERPLATE = [
+  "which choice best",
+  "which choice most",
+  "which choice provides",
+  "which choice describes",
+  "which choice explains",
+  "which choice completes",
+  "which choice reflects",
+  "which choice indicates",
+  "which choice suggests",
+  "which choice states",
+  "based on the passage",
+  "based on the text",
+  "according to the passage",
+  "according to the text",
+  "as used in the passage",
+  "as used in the text",
+  "as used in line",
+  "in context",
+  "most nearly means",
+  "most nearly",
+  "the author",
+  "the passage suggests",
+  "the passage implies",
+  "the passage indicates",
+  "the text suggests",
+  "the text implies",
+  "the main idea",
+  "the primary purpose",
+  "the main purpose",
+  "the passage primarily",
+  "the text primarily",
+  "is best supported",
+  "is most strongly supported",
+  "best illustrates",
+  "best exemplifies",
+  "best summarizes",
+  "best represents",
+  "best interprets",
+  "closest in meaning",
+];
+
+const BOILERPLATE_NORMALIZED = SAT_BOILERPLATE.map(normalize);
+
+function stripBoilerplate(text: string): string {
+  let result = normalize(text);
+  for (const phrase of BOILERPLATE_NORMALIZED) {
+    result = result.replace(phrase, "");
+  }
+  return result.replace(/\s+/g, " ").trim();
 }
 
 export function textSimilarity(a: Fingerprint, b: Fingerprint): number {
@@ -50,6 +109,33 @@ export function computeSimilarity(a: Fingerprint, b: Fingerprint): number {
 
   const structScore = structureSimilarity(a, b);
   return 0.6 * textScore + 0.4 * structScore;
+}
+
+export function computeWeightedContentSimilarity(
+  a: StructuredContent,
+  b: StructuredContent
+): number {
+  const qA = stripBoilerplate(a.question);
+  const qB = stripBoilerplate(b.question);
+  const cA = normalize(a.choices);
+  const cB = normalize(b.choices);
+  const pA = normalize(a.passage);
+  const pB = normalize(b.passage);
+
+  const questionScore = jaccardSimilarity(qA, qB);
+  const choiceScore = jaccardSimilarity(cA, cB);
+  const passageScore = jaccardSimilarity(pA, pB);
+
+  const bothHavePassages = a.passage.length > 0 && b.passage.length > 0;
+
+  if (bothHavePassages) {
+    // Shared passage is normal context, not a duplicate signal.
+    // Choices + specific question wording differentiate questions.
+    return 0.15 * passageScore + 0.30 * questionScore + 0.55 * choiceScore;
+  }
+
+  // No passage (Math or short RW)
+  return 0.45 * questionScore + 0.55 * choiceScore;
 }
 
 export function computeContentSimilarity(

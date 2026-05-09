@@ -20,16 +20,42 @@ function extractSection(text: string, tag: string): string {
 
 function extractChoices(text: string): Record<string, string> {
   const choices: Record<string, string> = {};
+
+  const CHOICE_START_RE = /^\s*\(?\s*([A-D])\s*[.)]\s*(.*)/;
+  const CHOICE_BARE_RE = /^\s*([A-D])\s{2,}(.*)/;
+
   const lines = text.split("\n");
-  const re = /^([A-D])\.\s*(.+)$/;
+  let currentKey: string | null = null;
+  let currentValue: string[] = [];
+
+  const flush = () => {
+    if (currentKey) {
+      choices[currentKey] = currentValue.join(" ").trim();
+    }
+    currentKey = null;
+    currentValue = [];
+  };
+
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed) continue;
-    const m = trimmed.match(re);
+    if (!trimmed) {
+      if (currentKey) flush();
+      continue;
+    }
+
+    let m = trimmed.match(CHOICE_START_RE);
+    if (!m) m = trimmed.match(CHOICE_BARE_RE);
+
     if (m) {
-      choices[m[1]] = m[2].trim();
+      flush();
+      currentKey = m[1];
+      currentValue = [m[2]];
+    } else if (currentKey) {
+      currentValue.push(trimmed);
     }
   }
+
+  flush();
   return choices;
 }
 

@@ -2,7 +2,22 @@ import { MathQuestion } from "../parser/types";
 import { ValidationError, TagCheckResult } from "./types";
 
 const VALID_ANSWERS_ABCD = new Set(["A", "B", "C", "D"]);
-const REQUIRED_CHOICE_KEYS = ["A", "B", "C", "D"];
+
+const MISSING_ANSWER_VALUES = new Set([
+  "",
+  "unknown",
+  "(not provided)",
+  "not provided",
+  "n/a",
+  "na",
+  "-",
+  "—",
+]);
+
+function isAnswerMissing(answer: string): boolean {
+  if (!answer) return true;
+  return MISSING_ANSWER_VALUES.has(answer.trim().toLowerCase());
+}
 
 export function validateMathQuestion(
   q: MathQuestion,
@@ -11,57 +26,89 @@ export function validateMathQuestion(
   const errors: ValidationError[] = [];
   const qid = q.questionId || "UNKNOWN";
 
+  // Fatal: missing question text
   if (!q.question) {
     errors.push({
       questionId: qid,
       field: "QUESTION",
       reason: "Missing QUESTION content",
       severity: "reject",
+      code: "MISSING_QUESTION",
     });
   }
 
-  const choiceKeys = Object.keys(q.choices);
-  if (choiceKeys.length < 4) {
-    const missing = REQUIRED_CHOICE_KEYS.filter((k) => !(k in q.choices));
-    errors.push({
-      questionId: qid,
-      field: "CHOICES",
-      reason: `Must have 4 choices (A–D). Missing: ${missing.join(", ")}`,
-      severity: "reject",
-    });
-  }
+  const isSPR = q.responseType === "spr";
 
-  for (const [key, val] of Object.entries(q.choices)) {
-    if (!val.trim()) {
+  if (isSPR) {
+    // SPR: no choices required
+    // Answer missing → warning (not fatal at ingestion)
+    if (isAnswerMissing(q.answer)) {
       errors.push({
         questionId: qid,
-        field: `CHOICES.${key}`,
-        reason: `Choice ${key} is empty`,
+        field: "ANSWER",
+        reason: "SPR answer missing — requires review before generation",
         severity: "warning",
+        code: "ANSWER_MISSING",
       });
     }
-  }
 
-  // Math answers can be A/B/C/D OR a numeric/expressed value (e.g. "5", "3/2")
-  const isLetterChoice = VALID_ANSWERS_ABCD.has(q.answer);
-  const isNumericAnswer = q.answer.trim().length > 0;
+    if (Object.keys(q.choices).length > 0) {
+      errors.push({
+        questionId: qid,
+        field: "CHOICES",
+        reason: "SPR question has choices — may be misclassified",
+        severity: "warning",
+        code: "MALFORMED_CHOICES",
+      });
+    }
+  } else {
+    // MCQ: must have 4 choices A-D (fatal)
+    const choiceKeys = Object.keys(q.choices);
+    if (choiceKeys.length < 4) {
+      const missing = ["A", "B", "C", "D"].filter((k) => !(k in q.choices));
+      errors.push({
+        questionId: qid,
+        field: "CHOICES",
+        reason: `MCQ must have 4 choices (A–D). Missing: ${missing.join(", ")}`,
+        severity: "reject",
+        code: "MISSING_CHOICES",
+      });
+    }
 
-  if (!q.answer || (!isLetterChoice && !isNumericAnswer)) {
-    errors.push({
-      questionId: qid,
-      field: "ANSWER",
-      reason: "Missing ANSWER",
-      severity: "reject",
-    });
-  }
+    for (const [key, val] of Object.entries(q.choices)) {
+      if (!val.trim()) {
+        errors.push({
+          questionId: qid,
+          field: `CHOICES.${key}`,
+          reason: `Choice ${key} is empty`,
+          severity: "warning",
+          code: "MALFORMED_CHOICES",
+        });
+      }
+    }
 
-  if (isLetterChoice && !(q.answer in q.choices)) {
-    errors.push({
-      questionId: qid,
-      field: "ANSWER",
-      reason: `Answer "${q.answer}" does not match any provided choice`,
-      severity: "reject",
-    });
+    // MCQ answer: missing → warning; invalid letter → fatal
+    if (isAnswerMissing(q.answer)) {
+      errors.push({
+        questionId: qid,
+        field: "ANSWER",
+        reason: "Answer missing — requires review before generation",
+        severity: "warning",
+        code: "ANSWER_MISSING",
+      });
+    } else {
+      const isLetterChoice = VALID_ANSWERS_ABCD.has(q.answer);
+      if (isLetterChoice && !(q.answer in q.choices)) {
+        errors.push({
+          questionId: qid,
+          field: "ANSWER",
+          reason: `Answer "${q.answer}" does not match any provided choice`,
+          severity: "reject",
+          code: "ANSWER_MISMATCH",
+        });
+      }
+      // Non-letter answers (e.g. numeric) are valid for MCQ too
+    }
   }
 
   for (const tag of tagCheck.malformedTags) {
@@ -70,6 +117,7 @@ export function validateMathQuestion(
       field: "TAG",
       reason: `Malformed or unrecognized tag: [${tag}]`,
       severity: "warning",
+      code: "MALFORMED_TAG",
     });
   }
 
@@ -79,6 +127,7 @@ export function validateMathQuestion(
       field: "TAG",
       reason: `Missing required tag: [${tag}]`,
       severity: "reject",
+      code: "MISSING_TAG",
     });
   }
 

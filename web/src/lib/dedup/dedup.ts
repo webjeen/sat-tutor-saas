@@ -1,22 +1,20 @@
 import { ParsedQuestion, RWQuestion } from "../parser/types";
-import { DedupResult, DedupMatch, FingerprintStore } from "./types";
+import { DedupResult, StructuredContent } from "./types";
 import { fingerprint } from "./fingerprint";
 import { createFingerprintStore } from "./store";
+import type { FingerprintStore } from "./types";
 
-const NEAR_THRESHOLD = 0.9;
-const SIMILAR_THRESHOLD = 0.8;
+const DUPLICATE_THRESHOLD = 0.995;
+const SIMILAR_THRESHOLD = 0.75;
 
-function questionContentText(q: ParsedQuestion): string {
-  const parts: string[] = [];
-  if (q.section === "RW") {
-    const rw = q as RWQuestion;
-    if (rw.passage) parts.push(rw.passage);
-  }
-  parts.push(q.question);
-  Object.keys(q.choices)
+function buildStructuredContent(q: ParsedQuestion): StructuredContent {
+  const passage = q.section === "RW" ? (q as RWQuestion).passage || "" : "";
+  const question = q.question;
+  const choices = Object.keys(q.choices)
     .sort()
-    .forEach((k) => parts.push(q.choices[k]));
-  return parts.join(" ");
+    .map((k) => q.choices[k])
+    .join(" ");
+  return { passage, question, choices };
 }
 
 export function dedupQuestion(
@@ -24,7 +22,7 @@ export function dedupQuestion(
   store: FingerprintStore
 ): DedupResult {
   const fp = fingerprint(q);
-  const content = questionContentText(q);
+  const content = buildStructuredContent(q);
   const matches = store.findMatches(fp, content);
 
   const bestMatch = matches[0];
@@ -38,21 +36,23 @@ export function dedupQuestion(
     };
   }
 
-  if (bestMatch.matchType === "exact" || bestMatch.score >= NEAR_THRESHOLD) {
+  // Only reject on exact fingerprint or near-certainty
+  if (bestMatch.matchType === "exact" || bestMatch.score >= DUPLICATE_THRESHOLD) {
     return {
       status: "duplicate",
       fingerprint: fp,
       matches,
-      reason: `Duplicate detected: score ${bestMatch.score.toFixed(2)} with question ${bestMatch.questionId} (${bestMatch.matchType})`,
+      reason: `Duplicate detected: score ${bestMatch.score.toFixed(4)} with question ${bestMatch.questionId} (${bestMatch.matchType})`,
     };
   }
 
+  // Similar → warning only, does NOT block insert
   if (bestMatch.score >= SIMILAR_THRESHOLD) {
     return {
       status: "similar",
       fingerprint: fp,
       matches,
-      reason: `Similar question detected: score ${bestMatch.score.toFixed(2)} with question ${bestMatch.questionId}`,
+      reason: `Similar question (warning only): score ${bestMatch.score.toFixed(4)} with question ${bestMatch.questionId}`,
     };
   }
 
@@ -77,7 +77,7 @@ export function dedupQuestions(
     results.push(result);
 
     if (result.status === "unique") {
-      store.add(q.questionId, result.fingerprint, questionContentText(q));
+      store.add(q.questionId, result.fingerprint, buildStructuredContent(q));
     }
   }
 

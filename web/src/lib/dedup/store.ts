@@ -1,23 +1,22 @@
-import { Fingerprint, DedupMatch, FingerprintStore } from "./types";
-import { computeSimilarity, computeContentSimilarity } from "./similarity";
+import { Fingerprint, DedupMatch, FingerprintStore, StructuredContent } from "./types";
+import { computeSimilarity, computeWeightedContentSimilarity } from "./similarity";
 
 const EXACT_THRESHOLD = 1;
-const NEAR_THRESHOLD = 0.9;
-const SIMILAR_THRESHOLD = 0.8;
-const CONTENT_NEAR_THRESHOLD = 0.9;
-const CONTENT_SIMILAR_THRESHOLD = 0.8;
+// Corpus-building: only reject on exact fingerprint match or near-certainty
+const NEAR_THRESHOLD = 0.995;
+const SIMILAR_THRESHOLD = 0.75;
 
 export function createFingerprintStore(): FingerprintStore {
   const store = new Map<string, Fingerprint>();
-  const contentTexts = new Map<string, string>();
+  const contentMap = new Map<string, StructuredContent>();
 
   return {
-    add(questionId: string, fingerprint: Fingerprint, contentText?: string) {
+    add(questionId: string, fingerprint: Fingerprint, content?: StructuredContent) {
       store.set(questionId, fingerprint);
-      if (contentText) contentTexts.set(questionId, contentText);
+      if (content) contentMap.set(questionId, content);
     },
 
-    findMatches(fp: Fingerprint, candidateContentText?: string): DedupMatch[] {
+    findMatches(fp: Fingerprint, candidateContent?: StructuredContent): DedupMatch[] {
       const matches: DedupMatch[] = [];
 
       for (const [existingId, existingFp] of store) {
@@ -33,21 +32,21 @@ export function createFingerprintStore(): FingerprintStore {
           continue;
         }
 
-        // For non-exact matches, use content-level Jaccard similarity
-        const existingContent = contentTexts.get(existingId);
-        if (candidateContentText && existingContent) {
-          const contentScore = computeContentSimilarity(
-            candidateContentText,
+        // For non-exact matches, use weighted content similarity
+        const existingContent = contentMap.get(existingId);
+        if (candidateContent && existingContent) {
+          const contentScore = computeWeightedContentSimilarity(
+            candidateContent,
             existingContent
           );
 
-          if (contentScore >= CONTENT_NEAR_THRESHOLD) {
+          if (contentScore >= NEAR_THRESHOLD) {
             matches.push({
               questionId: existingId,
               score: contentScore,
               matchType: "near",
             });
-          } else if (contentScore >= CONTENT_SIMILAR_THRESHOLD) {
+          } else if (contentScore >= SIMILAR_THRESHOLD) {
             matches.push({
               questionId: existingId,
               score: contentScore,
@@ -55,7 +54,7 @@ export function createFingerprintStore(): FingerprintStore {
             });
           }
         } else {
-          // No content text available — fall back to fingerprint score
+          // No content available — fall back to fingerprint score
           if (fingerprintScore >= SIMILAR_THRESHOLD) {
             matches.push({
               questionId: existingId,

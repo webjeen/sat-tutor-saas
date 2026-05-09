@@ -121,6 +121,7 @@ export function parseQuestions(
         message: dr.reason,
         severity: "reject",
       });
+      // Skip only this question, not the entire batch
     } else if (dr.status === "similar") {
       allErrors.push({
         questionId: questions[i].questionId,
@@ -134,24 +135,28 @@ export function parseQuestions(
     }
   }
 
-  if (allErrors.some((e) => e.severity === "reject" && e.field === "DEDUP")) {
+  // If all questions were duplicates, reject
+  if (uniqueQuestions.length === 0 && allErrors.some((e) => e.severity === "reject")) {
     return {
       status: "rejected",
-      questions: uniqueQuestions,
+      questions: [],
       errors: allErrors,
-      decisionReason: "Deduplication detected duplicate questions",
+      decisionReason: "All questions rejected by deduplication",
     };
   }
 
   const hasReview = allErrors.some((e) => e.severity === "review");
+  const hasReject = allErrors.some((e) => e.severity === "reject");
 
   return {
-    status: hasReview ? "review_required" : "validation_passed",
+    status: hasReview || hasReject ? "review_required" : "validation_passed",
     questions: uniqueQuestions,
     errors: allErrors,
-    decisionReason: hasReview
-      ? "Passed validation with warnings (dedup similarity or other)"
-      : "All questions parsed, validated, and dedup-checked successfully",
+    decisionReason: hasReject
+      ? "Some questions rejected by dedup; remaining questions passed"
+      : hasReview
+        ? "Passed validation with warnings (dedup similarity or other)"
+        : "All questions parsed, validated, and dedup-checked successfully",
   };
 }
 

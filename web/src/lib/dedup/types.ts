@@ -20,8 +20,14 @@ export interface DedupResult {
   reason: string;
 }
 
+export interface StructuredContent {
+  passage: string;
+  question: string;
+  choices: string;
+}
+
 export interface FingerprintStore {
-  add(questionId: string, fingerprint: Fingerprint, contentText?: string): void;
-  findMatches(fingerprint: Fingerprint, candidateContentText?: string): DedupMatch[];
+  add(questionId: string, fingerprint: Fingerprint, content?: StructuredContent): void;
+  findMatches(fingerprint: Fingerprint, candidateContent?: StructuredContent): DedupMatch[];
   getAll(): Map<string, Fingerprint>;
 }

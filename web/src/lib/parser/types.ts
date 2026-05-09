@@ -1,6 +1,7 @@
 export type ExamFamily = "DSAT";
 export type Section = "RW" | "Math";
 export type ModuleNumber = 1 | 2;
+export type ResponseType = "mcq" | "spr";
 
 export type ParseStatus =
   | "uploaded"
@@ -31,6 +32,7 @@ export interface MathQuestion extends BaseQuestion {
   graph: string;
   formula: string;
   answerExplanation: string;
+  responseType: ResponseType;
 }
 
 export type ParsedQuestion = RWQuestion | MathQuestion;
