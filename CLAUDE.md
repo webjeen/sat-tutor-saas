@@ -46,7 +46,7 @@ Selection → Parsing → Classification → Pattern → Generation → Validati
 - Generation Agent
 - Generation Validation Agent
 - Assembly Agent
-- PDF Layout Agent   # NEW
+- PDF Layout Agent
 - Export Agent
 - Feedback Agent
 
@@ -67,6 +67,108 @@ Every task MUST follow:
 
 ---
 
+## OPERATIONAL MEMORY SYSTEM (MANDATORY)
+
+Claude Code MUST treat repository documents as persistent operational memory.
+
+Do NOT rely on:
+- temporary conversation context
+- user memory
+- unstored assumptions
+
+Always rely on:
+- repository docs
+- workflow specifications
+- architecture references
+- task specifications
+
+The repository itself is the system memory.
+
+---
+
+## MANDATORY STARTUP WORKFLOW
+
+Before implementing ANY major feature:
+
+1. Read `docs/master-system-flow.md`
+2. Read `docs/agent-loop-orchestration.md`
+3. Read `docs/pattern-taxonomy.md`
+4. Confirm current active project phase
+5. Preserve validation-first architecture
+6. Preserve dedup-first architecture
+7. Preserve rollback-safe baseline structure
+8. Never bypass leakage prevention
+9. Never weaken ingestion validation without explicit approval
+10. Keep generated-question validation stricter than ingestion validation
+11. Respect `parser-v0.3-baseline` as the stable ingestion baseline
+12. If a feature belongs to future architecture layers, do NOT implement unless explicitly instructed
+
+---
+
+## TASK EXECUTION POLICY
+
+Before starting implementation work:
+
+- identify current system phase
+- identify related architecture constraints
+- identify required docs
+- identify forbidden shortcuts
+- identify rollback risk
+
+If uncertainty exists:
+- stop
+- inspect docs
+- verify architecture direction
+- then continue
+
+---
+
+## LONG-TERM ARCHITECTURE DIRECTION
+
+The system is designed to evolve toward:
+
+- Decision Engine
+- Queue System
+- Repair Agent
+- Autonomous Retry Logic
+- Multi-Agent Architecture
+- Orchestration Layer
+- Continuous Learning Loop
+
+These systems are FUTURE ARCHITECTURE layers.
+
+Do NOT prematurely implement them during MVP stabilization unless explicitly instructed.
+
+---
+
+## CURRENT STABLE BASELINE
+
+Current stable ingestion baseline:
+
+`parser-v0.3-baseline`
+
+Meaning:
+- ingestion stable
+- parser stable
+- rollback available
+- regression reference available
+- safe foundation for Pattern Extraction Engine
+
+---
+
+## CURRENT ACTIVE PHASE
+
+Current completed phases:
+- Phase 0 — System Design
+- Phase 1 — Parser / Ingestion Engine
+
+Current next phase:
+- Phase 2 — Pattern Extraction Engine
+
+Do NOT skip phase ordering.
+
+---
+
 ## STATE MACHINE (MANDATORY)
 
 status
@@ -81,13 +183,13 @@ updated_at
 
 ## STANDARD STATUS
 
-pending  
-processing  
-success  
-failed  
-review_required  
-approved  
-rejected  
+pending
+processing
+success
+failed
+review_required
+approved
+rejected
 
 ---
 
@@ -98,7 +200,7 @@ rejected
 - duplicate → regenerate
 - similarity borderline → review
 - success → next stage
-- PDF layout fail → block   # NEW
+- PDF layout fail → block
 - export fail → block
 
 Every decision MUST include:
@@ -111,7 +213,7 @@ decision_reason
 1. Generation-Level
 2. Global Duplicate
 3. Worksheet-Level
-4. PDF Layout Validation   # NEW
+4. PDF Layout Validation
 5. Final Export
 6. User Exposure
 
@@ -121,16 +223,16 @@ Fail ANY → block / retry / review
 
 ## PATTERN RULE
 
-Pattern-based generation ONLY  
-NO copying  
-NO paraphrase  
-logic only  
+Pattern-based generation ONLY
+NO copying
+NO paraphrase
+logic only
 
 ---
 
 ## DIFFICULTY SYSTEM
 
-difficulty_score (0–100)  
+difficulty_score (0–100)
 mapped_level (easy / medium / hard)
 
 ---
@@ -148,64 +250,65 @@ Must produce:
 
 ## LOGGING (MANDATORY)
 
-pipeline_logs  
-validation_logs  
-generation_logs  
-layout_logs      # NEW  
-error_logs  
-audit_logs  
+pipeline_logs
+validation_logs
+generation_logs
+layout_logs
+error_logs
+audit_logs
 
 ---
 
 ## VERSIONING (MANDATORY)
 
-pattern_versions  
-generation_versions  
-validation_versions  
+pattern_versions
+generation_versions
+validation_versions
 
 ---
 
 ## FAILURE HANDLING
 
-technical → retry ≤ 3  
-quality → regenerate  
-layout fail → regenerate / block  
-repeat fail → review_queue  
+technical → retry ≤ 3
+quality → regenerate
+layout fail → regenerate / block
+repeat fail → review_queue
 
 ---
 
 ## DOCS REFERENCE (REQUIRED)
 
-docs/agent-loop-orchestration.md  
-docs/db-schema.md  
-docs/quality-validation.md  
-docs/pattern-taxonomy.md  
-docs/difficulty-spec.md  
-docs/output-design.md  
-docs/output-selection-spec.md   # NEW
-docs/pdf-layout-spec.md         # NEW
-docs/ui-flow.md                 # NEW
-docs/auth-billing.md  
+docs/master-system-flow.md
+docs/agent-loop-orchestration.md
+docs/db-schema.md
+docs/quality-validation.md
+docs/pattern-taxonomy.md
+docs/difficulty-spec.md
+docs/output-design.md
+docs/output-selection-spec.md
+docs/pdf-layout-spec.md
+docs/ui-flow.md
+docs/auth-billing.md
 
 ---
 
 ## FORBIDDEN
 
-real data exposure  
-skip validation  
-duplicate output  
-unlogged execution  
-export before validation  
-PDF without layout validation  # NEW
+real data exposure
+skip validation
+duplicate output
+unlogged execution
+export before validation
+PDF without layout validation
 
 ---
 
 ## SUCCESS CONDITION
 
-no leaks  
-no duplicates  
-tutor-ready worksheet  
-stable PDF export  
+no leaks
+no duplicates
+tutor-ready worksheet
+stable PDF export
 
 ---
 
