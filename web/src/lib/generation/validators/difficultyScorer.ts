@@ -1,0 +1,88 @@
+import type { DifficultyCheckResult, DifficultyFactors, ParsedGeneration } from "../types";
+import type { DifficultyParameters } from "../../library/types";
+import { GENERATION_CONFIG, mapScoreToLevel } from "../config";
+
+export function scoreDifficulty(
+  parsed: ParsedGeneration,
+  difficultyParams: DifficultyParameters,
+  targetBand: "easy" | "medium" | "hard"
+): DifficultyCheckResult {
+  const factors = computeFactors(parsed, difficultyParams);
+  const weights = difficultyParams.factor_weights;
+
+  let score = 0;
+  let totalWeight = 0;
+  for (const [key, weight] of Object.entries(weights)) {
+    const factorVal = factors[key as keyof DifficultyFactors] ?? 0;
+    const w = Number(weight);
+    score += factorVal * w;
+    totalWeight += w;
+  }
+
+  const rawScore = totalWeight > 0 ? score / totalWeight : 0;
+  const difficultyScore = Math.round(rawScore * 100);
+  const mappedLevel = mapScoreToLevel(difficultyScore);
+
+  const range = getDifficultyRange(targetBand);
+  const mismatch = difficultyScore < range.min || difficultyScore > range.max;
+
+  let result: "pass" | "fail" | "review" = "pass";
+  if (targetBand === "hard" && difficultyScore < 60) {
+    result = "fail";
+  } else if (targetBand === "easy" && difficultyScore > 50) {
+    result = "review";
+  } else if (mismatch) {
+    result = "review";
+  }
+
+  return {
+    result,
+    difficultyScore,
+    mappedLevel,
+    factors,
+    targetBand,
+    mismatch,
+  };
+}
+
+function computeFactors(parsed: ParsedGeneration, _params: DifficultyParameters): DifficultyFactors {
+  const questionWords = parsed.question.split(/\s+/).length;
+  const passageWords = parsed.passage ? parsed.passage.split(/\s+/).length : 0;
+
+  const complexity = Math.min(1, (questionWords + passageWords * 0.3) / 80);
+  const syntax = Math.min(1, countComplexWords(parsed.question) / 8);
+  const reasoning = Math.min(1, parsed.reasoningTrace.length / 5);
+  const distractor = estimateDistractorComplexity(parsed);
+  const density = Math.min(1, passageWords / 400);
+  const time = Math.min(1, (questionWords + passageWords) / 150);
+
+  return {
+    complexity: Math.round(complexity * 100) / 100,
+    syntax: Math.round(syntax * 100) / 100,
+    reasoning: Math.round(reasoning * 100) / 100,
+    distractor: Math.round(distractor * 100) / 100,
+    density: Math.round(density * 100) / 100,
+    time: Math.round(time * 100) / 100,
+  };
+}
+
+function countComplexWords(text: string): number {
+  return text.split(/\s+/).filter((w) => w.length > 7).length;
+}
+
+function estimateDistractorComplexity(parsed: ParsedGeneration): number {
+  const strategies = Object.values(parsed.distractorStrategies).filter((s) => s !== null);
+  const uniqueStrategies = new Set(strategies);
+  return Math.min(1, uniqueStrategies.size / 3);
+}
+
+function getDifficultyRange(level: "easy" | "medium" | "hard"): { min: number; max: number } {
+  switch (level) {
+    case "easy":
+      return { min: 0, max: GENERATION_CONFIG.difficulty.easyMax };
+    case "medium":
+      return { min: GENERATION_CONFIG.difficulty.easyMax + 1, max: GENERATION_CONFIG.difficulty.mediumMax };
+    case "hard":
+      return { min: GENERATION_CONFIG.difficulty.mediumMax + 1, max: GENERATION_CONFIG.difficulty.hardMax };
+  }
+}
