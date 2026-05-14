@@ -153,6 +153,7 @@ Meaning:
 - rollback available
 - regression reference available
 - safe foundation for Pattern Extraction Engine
+- generation engine Phase 2 (prompt intelligence + SAT constraints) stable
 
 ---
 
@@ -161,9 +162,13 @@ Meaning:
 Current completed phases:
 - Phase 0 — System Design
 - Phase 1 — Parser / Ingestion Engine
+- Phase 2 — Pattern Extraction Engine
+- Phase 3 — Pattern Library Construction
+- Generated Question Engine Phase 1
+- Generated Question Engine Phase 2 — Prompt Intelligence + SAT-style Constraint System
 
 Current next phase:
-- Phase 2 — Pattern Extraction Engine
+- Generated Question Engine Phase 3 — Validation Hardening + Batch Generation
 
 Do NOT skip phase ordering.
 
