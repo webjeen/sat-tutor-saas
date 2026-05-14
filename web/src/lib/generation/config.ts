@@ -45,6 +45,31 @@ export const GENERATION_CONFIG = {
     maxChoiceLength: 200,
     minChoiceLength: 5,
   },
+
+  // Phase 2 additions
+  antiLeak: {
+    ngramOverlapCritical: 0.30,
+    ngramOverlapWarning: 0.20,
+    structuralLeakCritical: 0.85,
+    structuralLeakWarning: 0.70,
+    passageLeakCritical: 0.25,
+    passageLeakWarning: 0.15,
+  },
+
+  scoring: {
+    version: "2.0.0",
+    minimumOverallScore: 0.6,
+    minimumOriginalityScore: 0.5,
+    minimumSatFidelityScore: 0.7,
+  },
+
+  rhetorical: {
+    minPassageWords: 30,
+    maxPassageWords: 600,
+    targetPassageWords: { easy: 80, medium: 150, hard: 250 },
+    minRWHardConstraints: 2,
+    minMathHardConstraints: 2,
+  },
 } as const;
 
 export function getDifficultyRange(level: "easy" | "medium" | "hard"): { min: number; max: number } {
@@ -68,11 +93,29 @@ export const SYSTEM_MESSAGE_RW = `You are an SAT Reading & Writing question gene
 
 ABSOLUTE RULES:
 1. NEVER copy or closely paraphrase any real SAT question text
-2. All content must be structurally original
-3. Maintain SAT structural fidelity: passage + question + 4 choices (A-D) + 1 correct
-4. Each distractor must use a DIFFERENT strategy
-5. The correct answer must be unambiguously correct based on the passage
-6. Explanations must trace the reasoning path step by step
+2. NEVER reconstruct or approximate any real SAT passage, question stem, or answer choice
+3. All content must be structurally original — different argument structure, different evidence, different conclusion
+4. Maintain SAT structural fidelity: passage + question + 4 choices (A-D) + 1 correct
+5. Each distractor must use a DIFFERENT error strategy — no two distractors may share the same logical trap
+6. The correct answer must be unambiguously correct based solely on the generated passage
+7. Explanations must trace the reasoning path step by step
+8. Passage topics and arguments must be entirely original — no recognizable SAT passages
+9. Question stems must use original syntactic patterns — never mirror real SAT question wording
+10. If any part of your generation resembles a real SAT question, discard and regenerate from scratch
+
+PASSAGE REQUIREMENTS:
+- Use academic or journalistic register appropriate to the topic
+- Include a discernible thesis or central claim
+- Ground abstract claims with specific evidence, examples, or data
+- Use SAT-appropriate vocabulary with contextual clues
+- Maintain consistent tone throughout
+
+CHOICE REQUIREMENTS:
+- The correct answer must be the only one fully supported by the passage
+- Distractors must represent genuine logical errors (over-extension, misattribution, scope confusion, etc.)
+- No throwaway choices ("None of the above", "All of the above", etc.)
+- Choices should vary in length — do not make all choices the same length
+- The correct answer position (A/B/C/D) should not follow any predictable pattern
 
 OUTPUT FORMAT — respond with valid JSON only:
 {
@@ -90,11 +133,30 @@ export const SYSTEM_MESSAGE_MATH = `You are an SAT Math question generator. You 
 
 ABSOLUTE RULES:
 1. NEVER copy or closely paraphrase any real SAT question text
-2. All content must be structurally original
-3. Maintain SAT structural fidelity: problem + 4 choices (A-D) + 1 correct
-4. Each distractor must use a DIFFERENT strategy
-5. The correct answer must be mathematically unambiguous
-6. Explanations must show complete step-by-step solutions
+2. NEVER reconstruct or approximate any real SAT problem, setup, or answer choice
+3. All content must be structurally original — different problem setup, different numbers, different context
+4. Maintain SAT structural fidelity: problem + 4 choices (A-D) + 1 correct
+5. Each distractor must use a DIFFERENT mathematical error strategy
+6. The correct answer must be mathematically unambiguous
+7. Explanations must show complete step-by-step solutions
+8. Problem contexts must be entirely original — no recognizable SAT scenarios
+9. If any part of your generation resembles a real SAT question, discard and regenerate from scratch
+10. Do NOT include a passage — math questions have a problem statement only
+
+PROBLEM REQUIREMENTS:
+- Use standard algebraic notation (y=mx+b, f(x), etc.)
+- Real-world contexts should be practical and realistic (pricing, distance, rates, etc.)
+- Numbers should allow mental estimation to verify reasonableness
+- Solutions should be reachable through clear algebraic steps
+- Specify degrees or radians when trigonometry is involved
+
+CHOICE REQUIREMENTS:
+- Numeric distractors must differ from the correct answer by a meaningful amount
+- Distractors must result from common procedural errors (sign error, wrong operation, etc.)
+- No throwaway choices ("None of the above", "All of the above", etc.)
+- Choices should vary in format — not all just numbers
+- The correct answer position (A/B/C/D) should not follow any predictable pattern
+- Do not make the correct answer always the middle value
 
 OUTPUT FORMAT — respond with valid JSON only:
 {

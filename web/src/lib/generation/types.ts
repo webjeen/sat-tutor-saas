@@ -1,4 +1,4 @@
-import type { PatternTemplate, ReasoningStep, Section, LibraryCategory } from "../library/types";
+import type { PatternTemplate, ReasoningStep, Section, LibraryCategory, DistractorGenerationStrategy } from "../library/types";
 import type { Fingerprint, DedupMatch } from "../dedup/types";
 
 // -- Generation state machine (from agent-loop-orchestration.md §5.3) --
@@ -297,4 +297,161 @@ export interface GenerationResult {
   totalApproved: number;
   results: QuestionGenerationResult[];
   errors: string[];
+}
+
+// ============================================================
+// Phase 2 — Prompt Intelligence + SAT-style Constraint System
+// ============================================================
+
+// -- Reasoning chain assembly --
+
+export interface ReasoningChain {
+  steps: ReasoningChainStep[];
+  cognitiveLoad: number;
+  prerequisiteChains: string[];
+  chainId: string;
+  section: Section;
+  category: LibraryCategory;
+}
+
+export interface ReasoningChainStep {
+  step: number;
+  name: string;
+  description: string;
+  guidance: string;
+  cognitiveWeight: number;
+  prerequisiteSteps: number[];
+  validationHint: string;
+}
+
+export interface ChainAssemblyInput {
+  templateSteps: ReasoningStep[];
+  section: Section;
+  category: LibraryCategory;
+  difficultyTarget: "easy" | "medium" | "hard";
+  prerequisiteCategories: string[];
+}
+
+// -- SAT rhetorical constraint layers --
+
+export type RhetoricalConstraintLayer =
+  | "passage_structure"
+  | "argument_pattern"
+  | "evidence_type"
+  | "tone_register"
+  | "vocabulary_level"
+  | "logical_structure";
+
+export type MathConstraintLayer =
+  | "problem_framing"
+  | "notation_style"
+  | "solution_path"
+  | "context_type"
+  | "calculation_complexity";
+
+export interface RhetoricalConstraint {
+  layer: RhetoricalConstraintLayer;
+  rule: string;
+  enforcement: "hard" | "soft";
+  description: string;
+}
+
+export interface MathConstraint {
+  layer: MathConstraintLayer;
+  rule: string;
+  enforcement: "hard" | "soft";
+  description: string;
+}
+
+export interface SATConstraintSet {
+  rwConstraints: RhetoricalConstraint[];
+  mathConstraints: MathConstraint[];
+  antiLeakPromptRules: string[];
+  structuralOriginalityRules: string[];
+}
+
+// -- Distractor synthesis --
+
+export interface DistractorSynthesisInput {
+  section: Section;
+  category: LibraryCategory;
+  strategy: DistractorGenerationStrategy;
+  catalogEntries: DistractorCatalogEntry[];
+  difficultyTarget: "easy" | "medium" | "hard";
+  correctChoice: string | null;
+}
+
+export interface DistractorSynthesisPlan {
+  distractors: DistractorPlanEntry[];
+  crossChoiceConstraints: string[];
+  difficultyComplexity: number;
+  sectionSpecificGuidance: string;
+}
+
+export interface DistractorPlanEntry {
+  label: string;
+  strategy: string;
+  plausibilityLevel: "high" | "medium" | "low";
+  guidance: string;
+  avoidanceRules: string[];
+  complexityHint: number;
+}
+
+// -- Anti-leak safeguards --
+
+export interface AntiLeakSafeguardResult {
+  ngramOverlapScore: number;
+  structuralLeakageScore: number;
+  passageLeakageScore: number;
+  passed: boolean;
+  violations: AntiLeakViolation[];
+  promptRules: string[];
+}
+
+export interface AntiLeakViolation {
+  type: "ngram_overlap" | "structural_leakage" | "passage_leakage" | "phrase_reconstruction";
+  severity: "critical" | "warning";
+  description: string;
+  matchedText: string;
+  source: "real_question" | "pattern";
+}
+
+// -- Generation scoring metadata --
+
+export interface GenerationScore {
+  structuralQuality: number;
+  rhetoricalFidelity: number;
+  difficultyAlignment: number;
+  originality: number;
+  satFidelity: number;
+  distractorQuality: number;
+  reasoningCompleteness: number;
+  overallScore: number;
+  metadata: GenerationScoreMetadata;
+}
+
+export interface GenerationScoreMetadata {
+  section: Section;
+  category: LibraryCategory;
+  difficultyTarget: "easy" | "medium" | "hard";
+  templateId: string;
+  scoringVersion: string;
+  scoredAt: string;
+}
+
+// -- Enhanced prompt payload (Phase 2) --
+
+export interface PromptSection {
+  heading: string;
+  content: string;
+  priority: number;
+}
+
+export interface EnhancedPromptPayload extends PromptPayload {
+  sections: PromptSection[];
+  reasoningChain: ReasoningChain;
+  constraintSet: SATConstraintSet;
+  distractorPlan: DistractorSynthesisPlan;
+  antiLeakRules: string[];
+  generationScoreBaseline: GenerationScore | null;
 }

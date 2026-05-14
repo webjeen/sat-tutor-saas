@@ -9,7 +9,7 @@ import type {
 import type { Section, LibraryCategory } from "../library/types";
 import { GENERATION_CONFIG } from "./config";
 import { resolveTemplates } from "./templateResolver";
-import { buildPrompt } from "./promptBuilder";
+import { buildEnhancedPrompt } from "./promptBuilder";
 import { callLLM } from "./llmClient";
 import { parseResponse } from "./responseParser";
 import { validateStructure } from "./validators/structureValidator";
@@ -18,6 +18,8 @@ import { scoreDifficulty } from "./validators/difficultyScorer";
 import { validateDistractors } from "./validators/distractorValidator";
 import { checkGenerationDedup } from "./validators/generationDedup";
 import { decideGenerationAction } from "./decisionEngine";
+import { checkAntiLeakSafeguards } from "./antiLeakSafeguards";
+import { scoreGeneration, formatScoreForLog } from "./generationScorer";
 import { saveGenerationJob, updateGenerationJob } from "../supabase/saveGenerationJob";
 import { saveGeneratedQuestion } from "../supabase/saveGeneratedQuestion";
 import { saveGenerationLog } from "../supabase/saveGenerationLog";
@@ -168,8 +170,8 @@ async function generateSingleQuestion(
   const logs: string[] = [];
   const templateId = resolved.template.id;
 
-  // Build prompt
-  const prompt = buildPrompt(resolved as import("./types").ResolvedTemplate, section, difficulty);
+  // Build enhanced prompt (Phase 2)
+  const prompt = buildEnhancedPrompt(resolved as import("./types").ResolvedTemplate, section, difficulty);
   await logStage(jobId, null, templateId, section, category, "build_prompt", "success", null);
 
   // Call LLM
@@ -196,33 +198,62 @@ async function generateSingleQuestion(
 
   await logStage(jobId, null, templateId, section, category, "parse_response", "success", null);
 
-  // Run validators
+  // Run validators (Phase 1)
   const structureResult = validateStructure(parsed, section);
   const leakageResult = await detectLeakage(parsed, section);
   const difficultyResult = scoreDifficulty(parsed, resolved.template.difficulty_parameters, difficulty);
   const distractorResult = validateDistractors(parsed, resolved.template.distractor_strategy);
   const dedupResult = await checkGenerationDedup(parsed, section);
 
+  // Run anti-leak safeguards (Phase 2)
+  const realQuestionTexts = await loadRealQuestionTexts(section);
+  const antiLeakResult = checkAntiLeakSafeguards(parsed, realQuestionTexts);
+
+  if (!antiLeakResult.passed) {
+    logs.push(`Anti-leak safeguard FAILED: ngram=${antiLeakResult.ngramOverlapScore}, structural=${antiLeakResult.structuralLeakageScore}, passage=${antiLeakResult.passageLeakageScore}`);
+  }
+
+  // Run generation scoring (Phase 2)
+  const generationScore = scoreGeneration(
+    parsed,
+    { structure: structureResult, leakage: leakageResult, difficulty: difficultyResult, distractor: distractorResult, dedup: dedupResult, allPassed: false, failedChecks: [] },
+    antiLeakResult,
+    section,
+    category,
+    difficulty,
+    templateId
+  );
+  logs.push(formatScoreForLog(generationScore));
+
+  // Aggregate validation
   const validation: GenerationValidationResult = {
     structure: structureResult,
     leakage: leakageResult,
     difficulty: difficultyResult,
     distractor: distractorResult,
     dedup: dedupResult,
-    allPassed: structureResult.result === "pass" && leakageResult.result === "pass" && difficultyResult.result === "pass" && distractorResult.result === "pass" && dedupResult.result === "pass",
+    allPassed: structureResult.result === "pass"
+      && leakageResult.result === "pass"
+      && difficultyResult.result === "pass"
+      && distractorResult.result === "pass"
+      && dedupResult.result === "pass"
+      && antiLeakResult.passed
+      && generationScore.overallScore >= GENERATION_CONFIG.scoring.minimumOverallScore,
     failedChecks: [
       ...(structureResult.result !== "pass" ? ["structure"] : []),
       ...(leakageResult.result !== "pass" ? ["leakage"] : []),
       ...(difficultyResult.result !== "pass" ? ["difficulty"] : []),
       ...(distractorResult.result !== "pass" ? ["distractor"] : []),
       ...(dedupResult.result !== "pass" ? ["dedup"] : []),
+      ...(!antiLeakResult.passed ? ["anti_leak_safeguard"] : []),
+      ...(generationScore.overallScore < GENERATION_CONFIG.scoring.minimumOverallScore ? ["generation_score"] : []),
     ],
   };
 
   await logStage(jobId, null, templateId, section, category, "validate", "success", null, { validation });
 
   // Decision
-  const availableTemplateIds = [templateId]; // In single-template context
+  const availableTemplateIds = [templateId];
   const decision = decideGenerationAction(validation, retryCount, availableTemplateIds, templateId);
 
   // Store question if not discarded
@@ -326,6 +357,30 @@ async function generateSingleQuestion(
   }
 
   return { question, validation, decision, logs };
+}
+
+async function loadRealQuestionTexts(
+  section: "RW" | "Math"
+): Promise<{ id: string; passage: string; question: string; choices: string }[]> {
+  try {
+    const { supabase } = await import("../supabase/client");
+    const { data } = await supabase
+      .from("real_questions")
+      .select("id, raw_passage, raw_question, choice_a, choice_b, choice_c, choice_d")
+      .eq("section", section)
+      .in("parsing_status", ["validation_passed", "approved", "parsed"]);
+
+    if (!data) return [];
+
+    return data.map((rq: Record<string, unknown>) => ({
+      id: rq.id as string,
+      passage: (rq.raw_passage as string) || "",
+      question: (rq.raw_question as string) || "",
+      choices: [rq.choice_a, rq.choice_b, rq.choice_c, rq.choice_d].filter(Boolean).join(" "),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 async function logStage(
