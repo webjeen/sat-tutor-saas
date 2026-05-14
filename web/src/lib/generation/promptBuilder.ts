@@ -114,7 +114,7 @@ function buildPromptSections(
   return [
     buildHeaderSection(template, section, difficultyTarget),
     buildAntiLeakSection(antiLeakRules, constraintSet),
-    buildReasoningChainSection(reasoningChain),
+    buildReasoningChainSection(reasoningChain, difficultyTarget),
     buildConstraintSection(constraintSet, section),
     buildDistractorSection(distractorPlan, section),
     buildDifficultySection(template, difficultyTarget),
@@ -152,9 +152,9 @@ function buildAntiLeakSection(
   return { heading: "ANTI-LEAK RULES", content: parts.join("\n"), priority: 9 };
 }
 
-function buildReasoningChainSection(reasoningChain: ReasoningChain): PromptSection {
+function buildReasoningChainSection(reasoningChain: ReasoningChain, difficultyTarget: "easy" | "medium" | "hard"): PromptSection {
   const content = formatChainForPrompt(reasoningChain);
-  const validNote = isChainValidForDifficulty(reasoningChain, reasoningChain.category as "easy" | "medium" | "hard")
+  const validNote = isChainValidForDifficulty(reasoningChain, difficultyTarget)
     ? "\n[Chain validated for target difficulty]"
     : "\n[WARNING: Chain cognitive load may not match difficulty target]";
 
