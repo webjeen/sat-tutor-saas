@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { updatePatternStatus } from "@/lib/supabase/fetchPatterns";
+import { fetchPatternById, updatePatternStatus } from "@/lib/supabase/fetchPatterns";
 import { saveExtractionLog } from "@/lib/supabase/saveExtractionLog";
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -34,12 +34,32 @@ export async function PATCH(
     );
   }
 
-  // Validate transition (we'd need to fetch current status for full validation)
-  // For Phase 1, we do a basic check
-  const validTargets = VALID_TRANSITIONS[newStatus];
-  if (validTargets === undefined) {
+  // Fetch current status to validate transition
+  const { data: pattern, error: fetchError } = await fetchPatternById(id);
+  if (fetchError || !pattern) {
     return NextResponse.json(
-      { error: `Invalid target status: ${newStatus}` },
+      { error: fetchError || "Pattern not found" },
+      { status: 404 }
+    );
+  }
+
+  const currentStatus = pattern.status;
+  const allowedTargets = VALID_TRANSITIONS[currentStatus];
+
+  if (!allowedTargets) {
+    return NextResponse.json(
+      { error: `No transitions allowed from status "${currentStatus}"` },
+      { status: 400 }
+    );
+  }
+
+  if (!allowedTargets.includes(newStatus)) {
+    return NextResponse.json(
+      {
+        error: `Invalid transition: "${currentStatus}" → "${newStatus}". Allowed: [${allowedTargets.join(", ")}]`,
+        currentStatus,
+        allowedTargets,
+      },
       { status: 400 }
     );
   }
@@ -52,14 +72,14 @@ export async function PATCH(
 
   // Log the admin action
   await saveExtractionLog({
-    source_question_id: "",
+    source_question_id: pattern.source_question_id || "",
     pattern_id: id,
-    section: "RW", // placeholder, log doesn't need it for status changes
+    section: pattern.section,
     extraction_stage: "complete",
     status: "success",
     decision: "approve",
-    decision_reason: `Admin status change to ${newStatus}${reason ? ": " + reason : ""}`,
-    validation_results: {},
+    decision_reason: `Admin status change: ${currentStatus} → ${newStatus}${reason ? ": " + reason : ""}`,
+    validation_results: { previous_status: currentStatus, new_status: newStatus },
     error_message: null,
     retry_count: 0,
     extraction_duration_ms: null,
@@ -67,5 +87,10 @@ export async function PATCH(
     fingerprint_structure: null,
   });
 
-  return NextResponse.json({ success: true, patternId: id, newStatus });
+  return NextResponse.json({
+    success: true,
+    patternId: id,
+    previousStatus: currentStatus,
+    newStatus,
+  });
 }

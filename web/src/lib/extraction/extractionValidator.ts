@@ -7,7 +7,9 @@ import type {
   ExtractionValidationResult,
   ExtractionDecision,
   ApprovedQuestionRow,
+  ExtractionConfidence,
 } from "./types";
+
 import { normalize } from "../dedup/fingerprint";
 
 const APPROVED_STATUSES = new Set([
@@ -15,6 +17,9 @@ const APPROVED_STATUSES = new Set([
   "approved",
   "parsed",
 ]);
+
+// Confidence threshold below which extraction is auto-routed to review
+const LOW_CONFIDENCE_THRESHOLD = 0.5;
 
 export function validateSourceApproved(
   question: ApprovedQuestionRow
@@ -57,7 +62,6 @@ export function validateNoRealLeak(
 
   const normalizedSources = sourceTexts.map((t) => normalize(t!));
 
-  // Extract all string values from extracted data
   const extractedValues = Object.values(extractedData);
 
   for (const value of extractedValues) {
@@ -65,7 +69,6 @@ export function validateNoRealLeak(
 
     for (const source of normalizedSources) {
       const sourceWords = source.split(" ");
-      // Check for 5+ consecutive word overlap
       for (let i = 0; i <= sourceWords.length - 5; i++) {
         const window = sourceWords.slice(i, i + 5).join(" ");
         if (window.length > 20 && normalize(value).includes(window)) {
@@ -133,10 +136,35 @@ export function validateNotDuplicate(
   return errors;
 }
 
+export function validateConfidence(
+  confidence: ExtractionConfidence
+): ExtractionValidationError[] {
+  const errors: ExtractionValidationError[] = [];
+
+  if (confidence.overall < LOW_CONFIDENCE_THRESHOLD) {
+    errors.push({
+      field: "extraction_confidence",
+      reason: `Overall extraction confidence ${confidence.overall.toFixed(2)} below threshold ${LOW_CONFIDENCE_THRESHOLD}`,
+      severity: "review",
+    });
+  }
+
+  for (const field of confidence.low_confidence_fields) {
+    errors.push({
+      field: `confidence:${field}`,
+      reason: `Field "${field}" has low classification confidence`,
+      severity: "review",
+    });
+  }
+
+  return errors;
+}
+
 export function validateExtraction(
   sourceQuestion: ApprovedQuestionRow,
   extractedData: SectionExtractedData,
   patternOutput: PatternOutput,
+  confidence: ExtractionConfidence,
   existingPatterns: { type: string; reasoning_pattern: string | null; distractor_pattern: string | null }[] = []
 ): ExtractionValidationResult {
   const errors: ExtractionValidationError[] = [];
@@ -145,6 +173,7 @@ export function validateExtraction(
   errors.push(...validateNoRealLeak(extractedData, sourceQuestion));
   errors.push(...validateLogicComplete(extractedData));
   errors.push(...validateNotDuplicate(extractedData, sourceQuestion.section, existingPatterns));
+  errors.push(...validateConfidence(confidence));
 
   const hasReject = errors.some((e) => e.severity === "reject");
   const hasReview = errors.some((e) => e.severity === "review");

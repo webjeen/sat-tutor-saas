@@ -143,6 +143,25 @@ export type SyntaxComplexity = "simple" | "moderate" | "complex";
 
 export type AbstractionLevel = "concrete" | "moderate" | "abstract";
 
+// -- Confidence scoring --
+export type ConfidenceLevel = "high" | "medium" | "low";
+
+export interface FieldConfidence {
+  field: string;
+  value: string;
+  confidence: number;       // 0–1
+  confidence_level: ConfidenceLevel;
+  method: "tag" | "keyword" | "heuristic" | "fallback";
+  signals: string[];        // what triggered this classification
+}
+
+export interface ExtractionConfidence {
+  overall: number;          // 0–1, weighted average of field confidences
+  overall_level: ConfidenceLevel;
+  fields: FieldConfidence[];
+  low_confidence_fields: string[];
+}
+
 // -- RW Extracted Pattern Data --
 export interface RWExtractedData {
   question_type: RWPatternType;
@@ -229,6 +248,7 @@ export interface ExtractionResult {
   section: Section;
   extractedData: SectionExtractedData;
   patternOutput: PatternOutput;
+  confidence: ExtractionConfidence;
   validation: ExtractionValidationResult;
 }
 
@@ -237,8 +257,21 @@ export interface BatchExtractionResult {
   extracted: number;
   failed: number;
   reviewRequired: number;
+  skipped: number;
   results: ExtractionResult[];
   errors: ExtractionResult[];
+  batchStats: BatchExtractionStats;
+}
+
+export interface BatchExtractionStats {
+  totalProcessed: number;
+  averageConfidence: number;
+  lowConfidenceCount: number;
+  tagBasedCount: number;
+  keywordBasedCount: number;
+  fallbackCount: number;
+  sectionBreakdown: Record<string, { count: number; avgConfidence: number }>;
+  durationMs: number;
 }
 
 // -- Extraction log record (maps to DB row) --

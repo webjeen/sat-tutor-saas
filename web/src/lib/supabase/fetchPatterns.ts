@@ -55,13 +55,19 @@ export async function updatePatternStatus(
   newStatus: string,
   decisionReason?: string
 ): Promise<{ success: boolean; error?: string }> {
+  const updateData: Record<string, unknown> = {
+    status: newStatus,
+    last_processed_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  if (decisionReason) {
+    updateData.error_message = decisionReason;
+  }
+
   const { error } = await supabase
     .from("patterns")
-    .update({
-      status: newStatus,
-      last_processed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update(updateData)
     .eq("id", patternId);
 
   if (error) {
