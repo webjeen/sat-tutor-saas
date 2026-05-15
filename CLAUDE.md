@@ -157,6 +157,7 @@ Meaning:
 - generation engine Phase 3 (validation hardening + batch generation) stable
 - worksheet assembly engine stable
 - validation hardening (structural clone detection, pre-save/pre-export gates, escalation policy, audit logging) stable
+- PDF layout engine stable
 
 ---
 
@@ -172,9 +173,10 @@ Current completed phases:
 - Generated Question Engine Phase 3 — Validation Hardening + Batch Generation
 - Validation Hardening Phase — Structural Clone Detection, Pre-Save/Pre-Export Gates, Escalation Policy, Audit Logging
 - Worksheet Assembly Engine
+- PDF Layout Engine
 
 Current next phase:
-- PDF Layout Engine
+- Tutor SaaS Layer
 
 Do NOT skip phase ordering.
 
