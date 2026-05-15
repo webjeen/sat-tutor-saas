@@ -155,6 +155,7 @@ Meaning:
 - safe foundation for Pattern Extraction Engine
 - generation engine Phase 2 (prompt intelligence + SAT constraints) stable
 - generation engine Phase 3 (validation hardening + batch generation) stable
+- worksheet assembly engine stable
 
 ---
 
@@ -168,9 +169,10 @@ Current completed phases:
 - Generated Question Engine Phase 1
 - Generated Question Engine Phase 2 — Prompt Intelligence + SAT-style Constraint System
 - Generated Question Engine Phase 3 — Validation Hardening + Batch Generation
+- Worksheet Assembly Engine
 
 Current next phase:
-- Worksheet Assembly Engine
+- PDF Layout Engine
 
 Do NOT skip phase ordering.
 
