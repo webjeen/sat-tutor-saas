@@ -158,6 +158,7 @@ Meaning:
 - worksheet assembly engine stable
 - validation hardening (structural clone detection, pre-save/pre-export gates, escalation policy, audit logging) stable
 - PDF layout engine stable
+- Tutor SaaS Layer stable (job system, orchestration, review pipeline, operational APIs, safety controls)
 
 ---
 
@@ -174,9 +175,10 @@ Current completed phases:
 - Validation Hardening Phase — Structural Clone Detection, Pre-Save/Pre-Export Gates, Escalation Policy, Audit Logging
 - Worksheet Assembly Engine
 - PDF Layout Engine
+- Tutor SaaS Layer — Job System, Orchestration, Review Pipeline, Operational APIs, Safety Controls
 
 Current next phase:
-- Tutor SaaS Layer
+- Auth/Billing/Subscription Layer
 
 Do NOT skip phase ordering.
 
