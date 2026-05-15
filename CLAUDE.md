@@ -156,6 +156,7 @@ Meaning:
 - generation engine Phase 2 (prompt intelligence + SAT constraints) stable
 - generation engine Phase 3 (validation hardening + batch generation) stable
 - worksheet assembly engine stable
+- validation hardening (structural clone detection, pre-save/pre-export gates, escalation policy, audit logging) stable
 
 ---
 
@@ -169,6 +170,7 @@ Current completed phases:
 - Generated Question Engine Phase 1
 - Generated Question Engine Phase 2 — Prompt Intelligence + SAT-style Constraint System
 - Generated Question Engine Phase 3 — Validation Hardening + Batch Generation
+- Validation Hardening Phase — Structural Clone Detection, Pre-Save/Pre-Export Gates, Escalation Policy, Audit Logging
 - Worksheet Assembly Engine
 
 Current next phase:
