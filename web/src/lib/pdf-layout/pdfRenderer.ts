@@ -1,11 +1,13 @@
 import PDFDocument from "pdfkit";
 import type { RenderDocument } from "./types";
-import { DEFAULT_PAGE_LAYOUT } from "./config";
+import { DEFAULT_PAGE_LAYOUT, HEADER_CONFIG, FOOTER_CONFIG } from "./config";
 import {
   renderStudentWorksheet,
   renderAnswerKey,
   renderExplanationPack,
 } from "./sectionLayouts";
+
+type Doc = InstanceType<typeof PDFDocument>;
 
 // -- Core PDF renderer --
 // Takes a validated RenderDocument and produces a PDF Buffer
@@ -44,11 +46,64 @@ export async function renderPdf(doc: RenderDocument): Promise<Buffer> {
         renderExplanationPack(pdfDoc, doc.explanationPack);
       }
 
+      // 4. Headers and footers (post-render pass using buffered pages)
+      addHeadersAndFooters(pdfDoc, doc);
+
       pdfDoc.end();
     } catch (err) {
       reject(err);
     }
   });
+}
+
+// -- Post-render header/footer pass --
+// Must temporarily suppress page-break logic for margin-area text.
+
+function addHeadersAndFooters(pdfDoc: Doc, doc: RenderDocument): void {
+  const range = pdfDoc.bufferedPageRange();
+
+  for (let i = range.start; i < range.start + range.count; i++) {
+    pdfDoc.switchToPage(i);
+
+    // Suppress page-break triggers while writing in margin area
+    const origBottom = pdfDoc.page.margins.bottom;
+    pdfDoc.page.margins.bottom = 0;
+
+    // Header — worksheet title (skip page 1, title already visible)
+    if (i > 0) {
+      pdfDoc.save();
+      pdfDoc.fontSize(HEADER_CONFIG.fontSize).font("Helvetica").fillColor(HEADER_CONFIG.color);
+      pdfDoc.text(
+        doc.worksheetTitle,
+        pdfDoc.page.margins.left,
+        mmToPoints(HEADER_CONFIG.yOffsetMm),
+        {
+          width: pdfDoc.page.width - pdfDoc.page.margins.left - pdfDoc.page.margins.right,
+          align: "left",
+          lineBreak: false,
+        }
+      );
+      pdfDoc.restore();
+    }
+
+    // Footer — page number on all pages
+    pdfDoc.save();
+    pdfDoc.fontSize(FOOTER_CONFIG.fontSize).font("Helvetica").fillColor(FOOTER_CONFIG.color);
+    pdfDoc.text(
+      `Page ${i + 1} of ${range.count}`,
+      pdfDoc.page.margins.left,
+      pdfDoc.page.height - mmToPoints(FOOTER_CONFIG.yOffsetMm) - FOOTER_CONFIG.fontSize,
+      {
+        width: pdfDoc.page.width - pdfDoc.page.margins.left - pdfDoc.page.margins.right,
+        align: "center",
+        lineBreak: false,
+      }
+    );
+    pdfDoc.restore();
+
+    // Restore original bottom margin
+    pdfDoc.page.margins.bottom = origBottom;
+  }
 }
 
 // -- Unit helpers --

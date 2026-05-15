@@ -96,6 +96,21 @@ export const EXPORT_CONFIG = {
   maxQuestionsPerPage: 8,
   answerKeyColumns: 2,
   minBottomSpaceForQuestion: 120,
+  choiceIndentPt: 24,
+} as const;
+
+// -- Header / footer config --
+
+export const HEADER_CONFIG = {
+  fontSize: 8,
+  yOffsetMm: 8,
+  color: "#999999",
+} as const;
+
+export const FOOTER_CONFIG = {
+  fontSize: 8,
+  yOffsetMm: 10,
+  color: "#999999",
 } as const;
 
 export function getOutputProfileDefinition(
