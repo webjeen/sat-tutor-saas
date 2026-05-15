@@ -154,6 +154,7 @@ Meaning:
 - regression reference available
 - safe foundation for Pattern Extraction Engine
 - generation engine Phase 2 (prompt intelligence + SAT constraints) stable
+- generation engine Phase 3 (validation hardening + batch generation) stable
 
 ---
 
@@ -166,9 +167,10 @@ Current completed phases:
 - Phase 3 — Pattern Library Construction
 - Generated Question Engine Phase 1
 - Generated Question Engine Phase 2 — Prompt Intelligence + SAT-style Constraint System
+- Generated Question Engine Phase 3 — Validation Hardening + Batch Generation
 
 Current next phase:
-- Generated Question Engine Phase 3 — Validation Hardening + Batch Generation
+- Worksheet Assembly Engine
 
 Do NOT skip phase ordering.
 
