@@ -20,26 +20,6 @@ export const GENERATION_CONFIG = {
     dedupSimilar: 0.60,
   },
 
-  difficulty: {
-    easyMax: 30,
-    mediumMax: 70,
-    hardMax: 100,
-    factorWeights: {
-      complexity: 0.25,
-      syntax: 0.15,
-      reasoning: 0.30,
-      distractor: 0.20,
-      density: 0.05,
-      time: 0.05,
-    } as Record<string, number>,
-  },
-
-  distractor: {
-    minimumCount: 3,
-    maxSameStrategy: 1,
-    minDiversityScore: 0.5,
-  },
-
   limits: {
     maxQuestionsPerJob: 20,
     maxChoiceLength: 200,
@@ -69,6 +49,66 @@ export const GENERATION_CONFIG = {
     targetPassageWords: { easy: 80, medium: 150, hard: 250 },
     minRWHardConstraints: 2,
     minMathHardConstraints: 2,
+  },
+
+  // Phase 3 additions
+  structure: {
+    choiceSimilarityThreshold: 0.80,
+    minExplanationWords: 15,
+    minStudentExplanationWords: 10,
+    correctAnswerOverlapThreshold: 0.60,
+  },
+
+  distractor: {
+    minimumCount: 3,
+    maxSameStrategy: 1,
+    minDiversityScore: 0.5,
+    crossDistractorSimilarityThreshold: 0.70,
+    distractorCorrectOverlapThreshold: 0.65,
+    strategyConformanceMinWords: 3,
+  },
+
+  difficulty: {
+    easyMax: 30,
+    mediumMax: 70,
+    hardMax: 100,
+    factorWeights: {
+      complexity: 0.20,
+      syntax: 0.10,
+      reasoning: 0.25,
+      distractor: 0.15,
+      density: 0.03,
+      time: 0.02,
+      passageQuality: 0.10,
+      explanationDepth: 0.10,
+      satMarkers: 0.05,
+    } as Record<string, number>,
+  },
+
+  satStyle: {
+    prohibitedChoicePatterns: ["all of the above", "none of the above", "n/a", "not applicable", "both a and b", "both b and c"],
+    requiredStemPatterns: ["which choice", "what is", "which of the following", "based on the passage", "according to the", "in context", "the passage", "the author"],
+    maxCorrectAnswerPositionBias: 0.35,
+  },
+
+  explanationCoherence: {
+    causalConnectives: ["because", "since", "therefore", "thus", "consequently", "as a result", "due to", "this shows", "this indicates", "this demonstrates", "which means", "implying that"],
+    distractorAddressPatterns: ["however", "but", "incorrect because", "wrong because", "not supported", "not the best", "does not", "fails to"],
+    minCoherenceScore: 0.5,
+  },
+
+  batch: {
+    maxBatchSize: 100,
+    defaultDiversityDistribution: { easy: 30, medium: 40, hard: 30 },
+    defaultMaxSameCategory: 5,
+    defaultMinCategorySpread: 2,
+    recentWindowDays: 30,
+  },
+
+  caching: {
+    realQuestionsTTL: 300000,
+    generatedQuestionsTTL: 120000,
+    maxCacheSize: 5000,
   },
 } as const;
 
@@ -171,4 +211,12 @@ OUTPUT FORMAT — respond with valid JSON only:
 
 export function getSystemMessage(section: Section): string {
   return section === "RW" ? SYSTEM_MESSAGE_RW : SYSTEM_MESSAGE_MATH;
+}
+
+export function getTargetPassageWords(difficulty: "easy" | "medium" | "hard"): { min: number; max: number; target: number } {
+  return {
+    min: GENERATION_CONFIG.rhetorical.minPassageWords,
+    max: GENERATION_CONFIG.rhetorical.maxPassageWords,
+    target: GENERATION_CONFIG.rhetorical.targetPassageWords[difficulty],
+  };
 }

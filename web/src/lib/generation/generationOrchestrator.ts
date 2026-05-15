@@ -5,6 +5,8 @@ import type {
   GenerationValidationResult,
   GeneratedQuestion,
   GenerationStage,
+  AntiLeakSafeguardCheckResult,
+  GenerationScoreCheckResult,
 } from "./types";
 import type { Section, LibraryCategory } from "../library/types";
 import { GENERATION_CONFIG } from "./config";
@@ -13,10 +15,12 @@ import { buildEnhancedPrompt } from "./promptBuilder";
 import { callLLM } from "./llmClient";
 import { parseResponse } from "./responseParser";
 import { validateStructure } from "./validators/structureValidator";
-import { detectLeakage } from "./validators/leakageDetector";
+import { detectLeakage, clearLeakageCache } from "./validators/leakageDetector";
 import { scoreDifficulty } from "./validators/difficultyScorer";
 import { validateDistractors } from "./validators/distractorValidator";
-import { checkGenerationDedup } from "./validators/generationDedup";
+import { checkGenerationDedup, checkIntraBatchDedup, clearDedupCaches } from "./validators/generationDedup";
+import { validateExplanationCoherence } from "./validators/explanationCoherenceValidator";
+import { validateSATStyle } from "./validators/satStyleValidator";
 import { decideGenerationAction } from "./decisionEngine";
 import { checkAntiLeakSafeguards } from "./antiLeakSafeguards";
 import { scoreGeneration, formatScoreForLog } from "./generationScorer";
@@ -24,9 +28,16 @@ import { saveGenerationJob, updateGenerationJob } from "../supabase/saveGenerati
 import { saveGeneratedQuestion } from "../supabase/saveGeneratedQuestion";
 import { saveGenerationLog } from "../supabase/saveGenerationLog";
 import { saveValidationResult } from "../supabase/saveValidationResult";
+import type { Fingerprint, StructuredContent } from "../dedup/types";
+
+export interface BatchContext {
+  fingerprints: { id: string; fingerprint: Fingerprint; content: StructuredContent }[];
+  recentCorrectPositions: string[];
+}
 
 export async function runGenerationPipeline(
-  config: GenerationJobConfig
+  config: GenerationJobConfig,
+  batchContext?: BatchContext
 ): Promise<GenerationResult> {
   const { section, category, difficulty, count } = config;
   const errors: string[] = [];
@@ -101,7 +112,8 @@ export async function runGenerationPipeline(
           section,
           category,
           difficulty,
-          retryCount
+          retryCount,
+          batchContext
         );
 
         if (questionResult.decision.action === "approve" || questionResult.decision.action === "review" || questionResult.decision.action === "discard") {
@@ -149,6 +161,10 @@ export async function runGenerationPipeline(
     processing_stage: "complete",
   });
 
+  // 5. Clear caches
+  clearLeakageCache();
+  clearDedupCaches();
+
   return {
     jobId,
     totalRequested: count,
@@ -165,7 +181,8 @@ async function generateSingleQuestion(
   section: Section,
   category: LibraryCategory,
   difficulty: "easy" | "medium" | "hard",
-  retryCount: number
+  retryCount: number,
+  batchContext?: BatchContext
 ): Promise<QuestionGenerationResult> {
   const logs: string[] = [];
   const templateId = resolved.template.id;
@@ -198,14 +215,32 @@ async function generateSingleQuestion(
 
   await logStage(jobId, null, templateId, section, category, "parse_response", "success", null);
 
-  // Run validators (Phase 1)
-  const structureResult = validateStructure(parsed, section);
+  // Intra-batch dedup (Phase 3)
+  if (batchContext && batchContext.fingerprints.length > 0) {
+    const batchDedup = checkIntraBatchDedup(parsed, section, batchContext.fingerprints);
+    if (batchDedup.isDuplicate) {
+      logs.push(`Intra-batch duplicate detected (similarity: ${batchDedup.similarity}, matching: ${batchDedup.matchingItemId})`);
+      return {
+        question: null,
+        validation: emptyValidation(),
+        decision: { action: "regenerate", reason: `Intra-batch duplicate (similarity: ${batchDedup.similarity})`, failedChecks: ["intra_batch_dedup"], retryCount, suggestedTemplateId: null },
+        logs,
+      };
+    }
+  }
+
+  // Run validators (Phase 1 + Phase 3 hardened)
+  const structureResult = validateStructure(parsed, section, difficulty);
   const leakageResult = await detectLeakage(parsed, section);
-  const difficultyResult = scoreDifficulty(parsed, resolved.template.difficulty_parameters, difficulty);
+  const difficultyResult = scoreDifficulty(parsed, resolved.template.difficulty_parameters, difficulty, section);
   const distractorResult = validateDistractors(parsed, resolved.template.distractor_strategy);
   const dedupResult = await checkGenerationDedup(parsed, section);
 
-  // Run anti-leak safeguards (Phase 2)
+  // Phase 3: New validators
+  const explanationCoherenceResult = validateExplanationCoherence(parsed, section);
+  const satStyleResult = validateSATStyle(parsed, section, batchContext?.recentCorrectPositions);
+
+  // Phase 2: Anti-leak safeguards
   const realQuestionTexts = await loadRealQuestionTexts(section);
   const antiLeakResult = checkAntiLeakSafeguards(parsed, realQuestionTexts);
 
@@ -213,10 +248,10 @@ async function generateSingleQuestion(
     logs.push(`Anti-leak safeguard FAILED: ngram=${antiLeakResult.ngramOverlapScore}, structural=${antiLeakResult.structuralLeakageScore}, passage=${antiLeakResult.passageLeakageScore}`);
   }
 
-  // Run generation scoring (Phase 2)
+  // Phase 2: Generation scoring
   const generationScore = scoreGeneration(
     parsed,
-    { structure: structureResult, leakage: leakageResult, difficulty: difficultyResult, distractor: distractorResult, dedup: dedupResult, allPassed: false, failedChecks: [] },
+    { structure: structureResult, leakage: leakageResult, difficulty: difficultyResult, distractor: distractorResult, dedup: dedupResult, explanationCoherence: explanationCoherenceResult, satStyle: satStyleResult, antiLeakSafeguard: toAntiLeakCheckResult(antiLeakResult), generationScore: { result: "pass", overallScore: 0, failedMinimums: [] }, allPassed: false, failedChecks: [] },
     antiLeakResult,
     section,
     category,
@@ -225,6 +260,10 @@ async function generateSingleQuestion(
   );
   logs.push(formatScoreForLog(generationScore));
 
+  // Wrap Phase 2 outputs as check results
+  const antiLeakCheckResult = toAntiLeakCheckResult(antiLeakResult);
+  const generationScoreCheckResult = toGenerationScoreCheckResult(generationScore.overallScore);
+
   // Aggregate validation
   const validation: GenerationValidationResult = {
     structure: structureResult,
@@ -232,12 +271,19 @@ async function generateSingleQuestion(
     difficulty: difficultyResult,
     distractor: distractorResult,
     dedup: dedupResult,
+    explanationCoherence: explanationCoherenceResult,
+    satStyle: satStyleResult,
+    antiLeakSafeguard: antiLeakCheckResult,
+    generationScore: generationScoreCheckResult,
     allPassed: structureResult.result === "pass"
       && leakageResult.result === "pass"
       && difficultyResult.result === "pass"
       && distractorResult.result === "pass"
       && dedupResult.result === "pass"
-      && antiLeakResult.passed
+      && antiLeakCheckResult.result === "pass"
+      && generationScoreCheckResult.result === "pass"
+      && explanationCoherenceResult.result === "pass"
+      && satStyleResult.result === "pass"
       && generationScore.overallScore >= GENERATION_CONFIG.scoring.minimumOverallScore,
     failedChecks: [
       ...(structureResult.result !== "pass" ? ["structure"] : []),
@@ -247,6 +293,8 @@ async function generateSingleQuestion(
       ...(dedupResult.result !== "pass" ? ["dedup"] : []),
       ...(!antiLeakResult.passed ? ["anti_leak_safeguard"] : []),
       ...(generationScore.overallScore < GENERATION_CONFIG.scoring.minimumOverallScore ? ["generation_score"] : []),
+      ...(explanationCoherenceResult.result !== "pass" ? ["explanation_coherence"] : []),
+      ...(satStyleResult.result !== "pass" ? ["sat_style"] : []),
     ],
   };
 
@@ -334,7 +382,19 @@ async function generateSingleQuestion(
         updated_at: new Date().toISOString(),
       };
 
+      // Add to batch context if provided
+      if (batchContext) {
+        batchContext.fingerprints.push({
+          id: qId,
+          fingerprint: leakageResult.fingerprint,
+          content: { passage: parsed.passage || "", question: parsed.question, choices: Object.values(parsed.choices).join(" ") },
+        });
+        batchContext.recentCorrectPositions.push(parsed.correctChoice);
+      }
+
       // Save validation result
+      const checkSummary = `structure:${structureResult.result},leakage:${leakageResult.result},difficulty:${difficultyResult.result},distractor:${distractorResult.result},dedup:${dedupResult.result},anti_leak:${antiLeakCheckResult.result},gen_score:${generationScoreCheckResult.result},explanation:${explanationCoherenceResult.result},sat_style:${satStyleResult.result}`;
+
       await saveValidationResult({
         generated_question_id: qId,
         generation_log_id: null,
@@ -350,7 +410,7 @@ async function generateSingleQuestion(
         mapped_level: difficultyResult.mappedLevel,
         all_checks_passed: validation.allPassed,
         decision: decision.action,
-        decision_reason: decision.reason,
+        decision_reason: `${decision.reason} [${checkSummary}]`,
         status: "validation_complete",
       });
     }
@@ -358,6 +418,58 @@ async function generateSingleQuestion(
 
   return { question, validation, decision, logs };
 }
+
+// -- Phase 2 result wrappers --
+
+function toAntiLeakCheckResult(result: import("./types").AntiLeakSafeguardResult): AntiLeakSafeguardCheckResult {
+  const criticalViolations = result.violations.filter((v) => v.severity === "critical").length;
+  const warningViolations = result.violations.filter((v) => v.severity === "warning").length;
+
+  let checkResult: "pass" | "fail" | "review";
+  if (!result.passed) {
+    checkResult = criticalViolations > 0 ? "fail" : "review";
+  } else if (warningViolations > 0) {
+    checkResult = "review";
+  } else {
+    checkResult = "pass";
+  }
+
+  return {
+    result: checkResult,
+    ngramOverlapScore: result.ngramOverlapScore,
+    structuralLeakageScore: result.structuralLeakageScore,
+    passageLeakageScore: result.passageLeakageScore,
+    criticalViolations,
+    warningViolations,
+  };
+}
+
+function toGenerationScoreCheckResult(overallScore: number): GenerationScoreCheckResult {
+  const failedMinimums: string[] = [];
+  if (overallScore < GENERATION_CONFIG.scoring.minimumOverallScore) {
+    failedMinimums.push("overall");
+  }
+  if (overallScore < GENERATION_CONFIG.scoring.minimumOriginalityScore) {
+    failedMinimums.push("originality");
+  }
+
+  let result: "pass" | "fail" | "review";
+  if (failedMinimums.includes("overall") && overallScore < GENERATION_CONFIG.scoring.minimumOverallScore * 0.8) {
+    result = "fail";
+  } else if (failedMinimums.length > 0) {
+    result = "review";
+  } else {
+    result = "pass";
+  }
+
+  return {
+    result,
+    overallScore: Math.round(overallScore * 1000) / 1000,
+    failedMinimums,
+  };
+}
+
+// -- Helpers --
 
 async function loadRealQuestionTexts(
   section: "RW" | "Math"
@@ -417,11 +529,28 @@ async function logStage(
 
 function emptyValidation(): GenerationValidationResult {
   return {
-    structure: { result: "fail", issues: ["No question generated"], hasPassage: false, hasQuestion: false, hasAllChoices: false, hasCorrectChoice: false, hasExplanation: false, choiceLengthVariance: 0 },
+    structure: {
+      result: "fail", issues: ["No question generated"], hasPassage: false, hasQuestion: false,
+      hasAllChoices: false, hasCorrectChoice: false, hasExplanation: false, choiceLengthVariance: 0,
+      passageWordCount: 0, passageWordCountInRange: false,
+      choiceDeduplication: { hasDuplicates: false, duplicatePairs: [] },
+      explanationQuality: { result: "fail", wordCount: 0, meetsMinimum: false, containsReasoning: false },
+      studentExplanationPresent: false,
+      correctAnswerConsistency: { result: "pass", embeddedInQuestion: false, overlappingPhrases: [] },
+    },
     leakage: { result: "pass", maxSimilarity: 0, matchedRealQuestionIds: [], fingerprint: { textHash: "", structureHash: "", choiceHash: "", patternSignature: "" } },
-    difficulty: { result: "fail", difficultyScore: 0, mappedLevel: "easy", factors: { complexity: 0, syntax: 0, reasoning: 0, distractor: 0, density: 0, time: 0 }, targetBand: "easy", mismatch: true },
-    distractor: { result: "fail", distractorCount: 0, strategiesUsed: [], primaryPatternCovered: false, diversityScore: 0, perDistractor: [] },
+    difficulty: { result: "fail", difficultyScore: 0, mappedLevel: "easy", factors: { complexity: 0, syntax: 0, reasoning: 0, distractor: 0, density: 0, time: 0, passageQuality: 0, explanationDepth: 0, satMarkers: 0 }, targetBand: "easy", mismatch: true },
+    distractor: {
+      result: "fail", distractorCount: 0, strategiesUsed: [], primaryPatternCovered: false, diversityScore: 0, perDistractor: [],
+      crossDistractorSimilarity: { result: "pass", similarPairs: [] },
+      distractorCorrectOverlap: { result: "pass", overlappingDistractors: [] },
+      strategyConformance: { result: "pass", nonConformingDistractors: [] },
+    },
     dedup: { result: "pass", realQuestionMatches: [], generatedQuestionMatches: [], maxRealSimilarity: 0, maxGeneratedSimilarity: 0, fingerprint: { textHash: "", structureHash: "", choiceHash: "", patternSignature: "" } },
+    explanationCoherence: { result: "fail", referencesCorrectChoice: false, explainsWhy: false, addressesDistractors: false, coherenceScore: 0 },
+    satStyle: { result: "fail", questionStemFormat: "fail", choiceFormat: "fail", noProhibitedContent: "pass", correctAnswerDistribution: "pass", issues: ["No question generated"] },
+    antiLeakSafeguard: { result: "pass", ngramOverlapScore: 0, structuralLeakageScore: 0, passageLeakageScore: 0, criticalViolations: 0, warningViolations: 0 },
+    generationScore: { result: "pass", overallScore: 0, failedMinimums: [] },
     allPassed: false,
     failedChecks: ["structure", "difficulty", "distractor"],
   };

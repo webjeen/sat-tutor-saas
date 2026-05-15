@@ -7,8 +7,7 @@ export function decideGenerationAction(
   availableTemplateIds: string[],
   currentTemplateId: string | null
 ): DecisionResult {
-  const failedChecks: string[] = [];
-
+  // Priority 1: Leak/anti-leak → discard
   if (validation.leakage.result === "fail") {
     return {
       action: "discard",
@@ -19,28 +18,45 @@ export function decideGenerationAction(
     };
   }
 
-  if (validation.structure.result === "fail") {
-    failedChecks.push("structure");
+  if (validation.antiLeakSafeguard.result === "fail") {
+    return {
+      action: "discard",
+      reason: `Anti-leak safeguard failed: ngram=${validation.antiLeakSafeguard.ngramOverlapScore}, structural=${validation.antiLeakSafeguard.structuralLeakageScore}, passage=${validation.antiLeakSafeguard.passageLeakageScore}, criticalViolations=${validation.antiLeakSafeguard.criticalViolations}`,
+      failedChecks: ["anti_leak_safeguard"],
+      retryCount,
+      suggestedTemplateId: null,
+    };
   }
 
-  if (validation.difficulty.result === "fail") {
-    failedChecks.push("difficulty");
-  }
-
-  if (validation.distractor.result === "fail") {
-    failedChecks.push("distractor");
-  }
-
-  if (validation.dedup.result === "fail") {
-    failedChecks.push("dedup");
-  }
-
+  // Priority 2: Collect failed and review checks
+  const failedChecks: string[] = [];
   const reviewChecks: string[] = [];
-  if (validation.leakage.result === "review") reviewChecks.push("leakage");
-  if (validation.difficulty.result === "review") reviewChecks.push("difficulty");
-  if (validation.distractor.result === "review") reviewChecks.push("distractor");
-  if (validation.dedup.result === "review") reviewChecks.push("dedup");
 
+  if (validation.structure.result === "fail") failedChecks.push("structure");
+  if (validation.structure.result === "review") reviewChecks.push("structure");
+
+  if (validation.difficulty.result === "fail") failedChecks.push("difficulty");
+  if (validation.difficulty.result === "review") reviewChecks.push("difficulty");
+
+  if (validation.distractor.result === "fail") failedChecks.push("distractor");
+  if (validation.distractor.result === "review") reviewChecks.push("distractor");
+
+  if (validation.dedup.result === "fail") failedChecks.push("dedup");
+
+  if (validation.explanationCoherence.result === "fail") failedChecks.push("explanation_coherence");
+  if (validation.explanationCoherence.result === "review") reviewChecks.push("explanation_coherence");
+
+  if (validation.satStyle.result === "fail") failedChecks.push("sat_style");
+  if (validation.satStyle.result === "review") reviewChecks.push("sat_style");
+
+  if (validation.generationScore.result === "fail") failedChecks.push("generation_score");
+  if (validation.generationScore.result === "review") reviewChecks.push("generation_score");
+
+  if (validation.antiLeakSafeguard.result === "review") reviewChecks.push("anti_leak_safeguard");
+
+  if (validation.leakage.result === "review") reviewChecks.push("leakage");
+
+  // Priority 3: Max retries → review
   if (retryCount >= GENERATION_CONFIG.pipeline.maxRetriesPerQuestion) {
     return {
       action: "review",
@@ -51,6 +67,7 @@ export function decideGenerationAction(
     };
   }
 
+  // Priority 4: Failed checks → regenerate with template rotation
   if (failedChecks.length > 0) {
     const nextTemplate = suggestNextTemplate(availableTemplateIds, currentTemplateId);
     return {
@@ -62,6 +79,7 @@ export function decideGenerationAction(
     };
   }
 
+  // Priority 5: Multiple review states → review
   if (reviewChecks.length >= 2) {
     return {
       action: "review",
@@ -72,6 +90,7 @@ export function decideGenerationAction(
     };
   }
 
+  // Priority 6: Single review → regenerate with template rotation
   if (reviewChecks.length === 1) {
     const nextTemplate = suggestNextTemplate(availableTemplateIds, currentTemplateId);
     return {
@@ -83,6 +102,7 @@ export function decideGenerationAction(
     };
   }
 
+  // Priority 7: All pass → approve
   return {
     action: "approve",
     reason: "All validation checks passed",

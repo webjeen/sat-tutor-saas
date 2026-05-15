@@ -5,6 +5,30 @@ import type { Fingerprint, StructuredContent } from "../../dedup/types";
 import type { LeakCheckResult, ParsedGeneration } from "../types";
 import { GENERATION_CONFIG } from "../config";
 
+interface CacheEntry {
+  data: RealQuestionRow[];
+  fetchedAt: number;
+  section: string;
+}
+
+interface RealQuestionRow {
+  id: string;
+  raw_passage: string | null;
+  raw_question: string | null;
+  choice_a: string | null;
+  choice_b: string | null;
+  choice_c: string | null;
+  choice_d: string | null;
+  fingerprint_text: string | null;
+  fingerprint_structure: string | null;
+}
+
+let cache: CacheEntry | null = null;
+
+export function clearLeakageCache(): void {
+  cache = null;
+}
+
 export async function detectLeakage(
   parsed: ParsedGeneration,
   section: "RW" | "Math"
@@ -12,15 +36,12 @@ export async function detectLeakage(
   const fingerprint = generateFingerprint(parsed, section);
   const content = toStructuredContent(parsed, section);
 
-  const { data: realQuestions } = await supabase
-    .from("real_questions")
-    .select("id, raw_passage, raw_question, choice_a, choice_b, choice_c, choice_d, fingerprint_text, fingerprint_structure")
-    .in("parsing_status", ["validation_passed", "approved", "parsed"]);
+  const realQuestions = await fetchRealQuestions(section);
 
   let maxSimilarity = 0;
   const matchedIds: string[] = [];
 
-  if (realQuestions && realQuestions.length > 0) {
+  if (realQuestions.length > 0) {
     for (const rq of realQuestions) {
       if (fingerprint.textHash === rq.fingerprint_text) {
         maxSimilarity = 1.0;
@@ -59,6 +80,27 @@ export async function detectLeakage(
     matchedRealQuestionIds: matchedIds,
     fingerprint,
   };
+}
+
+async function fetchRealQuestions(section: "RW" | "Math"): Promise<RealQuestionRow[]> {
+  const now = Date.now();
+  const ttl = GENERATION_CONFIG.caching.realQuestionsTTL;
+
+  if (cache && cache.section === section && (now - cache.fetchedAt) < ttl) {
+    return cache.data;
+  }
+
+  const { data } = await supabase
+    .from("real_questions")
+    .select("id, raw_passage, raw_question, choice_a, choice_b, choice_c, choice_d, fingerprint_text, fingerprint_structure")
+    .eq("section", section)
+    .in("parsing_status", ["validation_passed", "approved", "parsed"]);
+
+  const rows = (data || []) as RealQuestionRow[];
+
+  cache = { data: rows, fetchedAt: now, section };
+
+  return rows;
 }
 
 function generateFingerprint(parsed: ParsedGeneration, section: "RW" | "Math"): Fingerprint {

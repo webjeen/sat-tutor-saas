@@ -29,6 +29,24 @@ export type GenerationStage =
 
 export type CheckResult = "pass" | "fail" | "review";
 
+export interface ChoiceDeduplicationResult {
+  hasDuplicates: boolean;
+  duplicatePairs: { choiceA: string; choiceB: string; similarity: number }[];
+}
+
+export interface ExplanationQualityResult {
+  result: CheckResult;
+  wordCount: number;
+  meetsMinimum: boolean;
+  containsReasoning: boolean;
+}
+
+export interface CorrectAnswerConsistencyResult {
+  result: CheckResult;
+  embeddedInQuestion: boolean;
+  overlappingPhrases: string[];
+}
+
 export interface StructureCheckResult {
   result: CheckResult;
   issues: string[];
@@ -38,6 +56,12 @@ export interface StructureCheckResult {
   hasCorrectChoice: boolean;
   hasExplanation: boolean;
   choiceLengthVariance: number;
+  passageWordCount: number;
+  passageWordCountInRange: boolean;
+  choiceDeduplication: ChoiceDeduplicationResult;
+  explanationQuality: ExplanationQualityResult;
+  studentExplanationPresent: boolean;
+  correctAnswerConsistency: CorrectAnswerConsistencyResult;
 }
 
 export interface LeakCheckResult {
@@ -63,6 +87,24 @@ export interface DifficultyFactors {
   distractor: number;
   density: number;
   time: number;
+  passageQuality: number;
+  explanationDepth: number;
+  satMarkers: number;
+}
+
+export interface CrossDistractorSimilarityResult {
+  result: CheckResult;
+  similarPairs: { distractorA: string; distractorB: string; similarity: number }[];
+}
+
+export interface DistractorCorrectOverlapResult {
+  result: CheckResult;
+  overlappingDistractors: { label: string; similarity: number }[];
+}
+
+export interface StrategyConformanceResult {
+  result: CheckResult;
+  nonConformingDistractors: { label: string; claimedStrategy: string; issue: string }[];
 }
 
 export interface DistractorCheckResult {
@@ -72,6 +114,9 @@ export interface DistractorCheckResult {
   primaryPatternCovered: boolean;
   diversityScore: number;
   perDistractor: PerDistractorAnalysis[];
+  crossDistractorSimilarity: CrossDistractorSimilarityResult;
+  distractorCorrectOverlap: DistractorCorrectOverlapResult;
+  strategyConformance: StrategyConformanceResult;
 }
 
 export interface PerDistractorAnalysis {
@@ -93,12 +138,56 @@ export interface DuplicateCheckResult {
 
 // -- Aggregated validation result --
 
+// -- Explanation coherence check --
+
+export interface ExplanationCoherenceCheckResult {
+  result: CheckResult;
+  referencesCorrectChoice: boolean;
+  explainsWhy: boolean;
+  addressesDistractors: boolean;
+  coherenceScore: number;
+}
+
+// -- SAT style check --
+
+export interface SATStyleCheckResult {
+  result: CheckResult;
+  questionStemFormat: CheckResult;
+  choiceFormat: CheckResult;
+  noProhibitedContent: CheckResult;
+  correctAnswerDistribution: CheckResult;
+  issues: string[];
+}
+
+// -- Anti-leak safeguard as check result --
+
+export interface AntiLeakSafeguardCheckResult {
+  result: CheckResult;
+  ngramOverlapScore: number;
+  structuralLeakageScore: number;
+  passageLeakageScore: number;
+  criticalViolations: number;
+  warningViolations: number;
+}
+
+// -- Generation score as check result --
+
+export interface GenerationScoreCheckResult {
+  result: CheckResult;
+  overallScore: number;
+  failedMinimums: string[];
+}
+
 export interface GenerationValidationResult {
   structure: StructureCheckResult;
   leakage: LeakCheckResult;
   difficulty: DifficultyCheckResult;
   distractor: DistractorCheckResult;
   dedup: DuplicateCheckResult;
+  explanationCoherence: ExplanationCoherenceCheckResult;
+  satStyle: SATStyleCheckResult;
+  antiLeakSafeguard: AntiLeakSafeguardCheckResult;
+  generationScore: GenerationScoreCheckResult;
   allPassed: boolean;
   failedChecks: string[];
 }
@@ -296,6 +385,56 @@ export interface GenerationResult {
   totalGenerated: number;
   totalApproved: number;
   results: QuestionGenerationResult[];
+  errors: string[];
+}
+
+// ============================================================
+// Phase 3 — Batch Generation
+// ============================================================
+
+export interface BatchDiversityRules {
+  maxSameCategory: number;
+  difficultyDistribution: { easy: number; medium: number; hard: number };
+  requireCategorySpread: boolean;
+  minCategorySpread: number;
+}
+
+export interface BatchGenerationConfig {
+  requests: GenerationJobConfig[];
+  diversityRules: BatchDiversityRules;
+  maxTotalQuestions: number;
+}
+
+export interface BatchValidationSummary {
+  overallPassRate: number;
+  checkFailureCounts: Record<string, number>;
+  averageGenerationScore: number;
+}
+
+export interface IntraBatchDedupResult {
+  duplicatePairsFound: number;
+  duplicatePairs: { questionAId: string; questionBId: string; similarity: number }[];
+  questionsRegenerated: number;
+}
+
+export interface BatchDiversityReport {
+  categoryDistribution: Record<string, number>;
+  difficultyDistribution: Record<string, number>;
+  meetsDiversityRules: boolean;
+  violations: string[];
+}
+
+export interface BatchGenerationResult {
+  batchId: string;
+  totalRequested: number;
+  totalGenerated: number;
+  totalApproved: number;
+  totalReview: number;
+  totalDiscarded: number;
+  jobResults: GenerationResult[];
+  batchValidation: BatchValidationSummary;
+  intraBatchDedup: IntraBatchDedupResult;
+  diversityReport: BatchDiversityReport;
   errors: string[];
 }
 
