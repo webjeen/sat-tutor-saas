@@ -9,6 +9,8 @@ import type { GeneratedQuestion, GenerationValidationResult, StructuralCloneResu
 import type { WorksheetAssemblyResult, WorksheetConfig, WorksheetQuestion, WorksheetValidationResult } from "../lib/assembly/types";
 import type { TutorJobStatus } from "../lib/tutor/types";
 import type { Section } from "../lib/parser/types";
+import * as fs from "fs";
+import * as path from "path";
 
 // ============================================================
 // Test runner infrastructure
@@ -554,6 +556,10 @@ async function testPDFLayoutRendering(): Promise<void> {
     "full_review_pack",
   ];
 
+  // Persist sample PDFs to disk
+  const outDir = path.resolve(__dirname, "..", "..", "pdf-samples");
+  if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
   for (const profile of profiles) {
     const profileAssembly = { ...assembly, config: { ...assembly.config, outputProfile: profile } };
     const renderDoc = buildRenderDocument(profileAssembly, null);
@@ -590,7 +596,13 @@ async function testPDFLayoutRendering(): Promise<void> {
     assert(pdfBuffer[0] === 0x25, "PDF should start with % (PDF header)"); // %PDF
     assert(pdfBuffer[1] === 0x50, "PDF should have P in header");
 
-    console.log(`    → ${profile}: ${pdfBuffer.length} bytes`);
+    // Write PDF to disk
+    const filepath = path.join(outDir, `rw_${profile}.pdf`);
+    fs.writeFileSync(filepath, pdfBuffer);
+    const stat = fs.statSync(filepath);
+    assert(stat.size === pdfBuffer.length, `${profile} persisted file size must match buffer`);
+
+    console.log(`    → ${profile}: ${pdfBuffer.length} bytes → ${filepath}`);
   }
 }
 

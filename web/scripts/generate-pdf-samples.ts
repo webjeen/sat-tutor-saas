@@ -327,7 +327,7 @@ function buildMathAssembly(): WorksheetAssemblyResult {
 }
 
 async function main() {
-  const outDir = path.join(__dirname, "..", "pdf-samples");
+  const outDir = path.resolve(__dirname, "..", "pdf-samples");
   if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
 
   const profiles: Array<import("../src/lib/assembly/types").OutputProfile> = [

@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "generate:samples": "npx tsx scripts/generate-pdf-samples.ts",
+    "test:smoke": "npx tsx src/smoke-test/e2e-smoke.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
