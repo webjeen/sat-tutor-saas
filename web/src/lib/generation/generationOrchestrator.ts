@@ -21,9 +21,20 @@ import { validateDistractors } from "./validators/distractorValidator";
 import { checkGenerationDedup, checkIntraBatchDedup, clearDedupCaches } from "./validators/generationDedup";
 import { validateExplanationCoherence } from "./validators/explanationCoherenceValidator";
 import { validateSATStyle } from "./validators/satStyleValidator";
+import { detectStructuralClones } from "./validators/structuralCloneDetector";
 import { decideGenerationAction } from "./decisionEngine";
+import { applyEscalationPolicy } from "./escalationPolicy";
 import { checkAntiLeakSafeguards } from "./antiLeakSafeguards";
 import { scoreGeneration, formatScoreForLog } from "./generationScorer";
+import { runPreSaveValidation } from "./preSaveValidation";
+import {
+  logValidationChecks,
+  logDecision,
+  logEscalation,
+  logPreSaveGate,
+  logAntiLeakCheck,
+  logStructuralCloneCheck,
+} from "./validationAuditLogger";
 import { saveGenerationJob, updateGenerationJob } from "../supabase/saveGenerationJob";
 import { saveGeneratedQuestion } from "../supabase/saveGeneratedQuestion";
 import { saveGenerationLog } from "../supabase/saveGenerationLog";
@@ -240,6 +251,10 @@ async function generateSingleQuestion(
   const explanationCoherenceResult = validateExplanationCoherence(parsed, section);
   const satStyleResult = validateSATStyle(parsed, section, batchContext?.recentCorrectPositions);
 
+  // Validation Hardening: Structural clone detection
+  const structuralCloneResult = await detectStructuralClones(parsed, section);
+  await logStructuralCloneCheck(null, "validate", structuralCloneResult.result, structuralCloneResult.maxCombinedScore, structuralCloneResult.matches.length);
+
   // Phase 2: Anti-leak safeguards
   const realQuestionTexts = await loadRealQuestionTexts(section);
   const antiLeakResult = checkAntiLeakSafeguards(parsed, realQuestionTexts);
@@ -248,10 +263,19 @@ async function generateSingleQuestion(
     logs.push(`Anti-leak safeguard FAILED: ngram=${antiLeakResult.ngramOverlapScore}, structural=${antiLeakResult.structuralLeakageScore}, passage=${antiLeakResult.passageLeakageScore}`);
   }
 
+  await logAntiLeakCheck(
+    null, "validate",
+    antiLeakResult.ngramOverlapScore,
+    antiLeakResult.structuralLeakageScore,
+    antiLeakResult.passageLeakageScore,
+    antiLeakResult.passed,
+    antiLeakResult.violations.filter((v) => v.severity === "critical").length
+  );
+
   // Phase 2: Generation scoring
   const generationScore = scoreGeneration(
     parsed,
-    { structure: structureResult, leakage: leakageResult, difficulty: difficultyResult, distractor: distractorResult, dedup: dedupResult, explanationCoherence: explanationCoherenceResult, satStyle: satStyleResult, antiLeakSafeguard: toAntiLeakCheckResult(antiLeakResult), generationScore: { result: "pass", overallScore: 0, failedMinimums: [] }, allPassed: false, failedChecks: [] },
+    { structure: structureResult, leakage: leakageResult, difficulty: difficultyResult, distractor: distractorResult, dedup: dedupResult, explanationCoherence: explanationCoherenceResult, satStyle: satStyleResult, antiLeakSafeguard: toAntiLeakCheckResult(antiLeakResult), generationScore: { result: "pass", overallScore: 0, failedMinimums: [] }, structuralClone: structuralCloneResult, allPassed: false, failedChecks: [] },
     antiLeakResult,
     section,
     category,
@@ -275,6 +299,7 @@ async function generateSingleQuestion(
     satStyle: satStyleResult,
     antiLeakSafeguard: antiLeakCheckResult,
     generationScore: generationScoreCheckResult,
+    structuralClone: structuralCloneResult,
     allPassed: structureResult.result === "pass"
       && leakageResult.result === "pass"
       && difficultyResult.result === "pass"
@@ -284,6 +309,7 @@ async function generateSingleQuestion(
       && generationScoreCheckResult.result === "pass"
       && explanationCoherenceResult.result === "pass"
       && satStyleResult.result === "pass"
+      && structuralCloneResult.result === "pass"
       && generationScore.overallScore >= GENERATION_CONFIG.scoring.minimumOverallScore,
     failedChecks: [
       ...(structureResult.result !== "pass" ? ["structure"] : []),
@@ -295,14 +321,55 @@ async function generateSingleQuestion(
       ...(generationScore.overallScore < GENERATION_CONFIG.scoring.minimumOverallScore ? ["generation_score"] : []),
       ...(explanationCoherenceResult.result !== "pass" ? ["explanation_coherence"] : []),
       ...(satStyleResult.result !== "pass" ? ["sat_style"] : []),
+      ...(structuralCloneResult.result !== "pass" ? ["structural_clone"] : []),
     ],
   };
 
   await logStage(jobId, null, templateId, section, category, "validate", "success", null, { validation });
+  await logValidationChecks(null, "validate", validation);
 
-  // Decision
+  // Decision (base decision from decision engine)
   const availableTemplateIds = [templateId];
-  const decision = decideGenerationAction(validation, retryCount, availableTemplateIds, templateId);
+  const baseDecision = decideGenerationAction(validation, retryCount, availableTemplateIds, templateId);
+
+  // Validation Hardening: Escalation policy
+  const escalationResult = applyEscalationPolicy(validation, baseDecision, retryCount, []);
+  const decision = {
+    action: escalationResult.action,
+    reason: escalationResult.reason,
+    failedChecks: baseDecision.failedChecks,
+    retryCount,
+    suggestedTemplateId: baseDecision.suggestedTemplateId,
+  };
+
+  await logDecision(null, "validate", decision);
+
+  // Log any escalations
+  for (const event of escalationResult.escalationHistory) {
+    await logEscalation(null, "validate", event);
+  }
+
+  // Pre-save validation gate
+  const preSaveResult = runPreSaveValidation(
+    parsed,
+    validation,
+    decision,
+    leakageResult.fingerprint
+  );
+  await logPreSaveGate(null, "pre_save", preSaveResult);
+
+  if (!preSaveResult.cleared) {
+    logs.push(`Pre-save gate BLOCKED: ${preSaveResult.blockedReasons.join("; ")}`);
+    // If pre-save blocked but decision was not discard, override to discard
+    if (decision.action !== "discard") {
+      return {
+        question: null,
+        validation,
+        decision: { action: "discard", reason: `Pre-save gate blocked: ${preSaveResult.blockedReasons.join("; ")}`, failedChecks: [...decision.failedChecks, "pre_save_gate"], retryCount, suggestedTemplateId: null },
+        logs,
+      };
+    }
+  }
 
   // Store question if not discarded
   let question: GeneratedQuestion | null = null;
@@ -393,7 +460,7 @@ async function generateSingleQuestion(
       }
 
       // Save validation result
-      const checkSummary = `structure:${structureResult.result},leakage:${leakageResult.result},difficulty:${difficultyResult.result},distractor:${distractorResult.result},dedup:${dedupResult.result},anti_leak:${antiLeakCheckResult.result},gen_score:${generationScoreCheckResult.result},explanation:${explanationCoherenceResult.result},sat_style:${satStyleResult.result}`;
+      const checkSummary = `structure:${structureResult.result},leakage:${leakageResult.result},difficulty:${difficultyResult.result},distractor:${distractorResult.result},dedup:${dedupResult.result},anti_leak:${antiLeakCheckResult.result},gen_score:${generationScoreCheckResult.result},explanation:${explanationCoherenceResult.result},sat_style:${satStyleResult.result},structural_clone:${structuralCloneResult.result}`;
 
       await saveValidationResult({
         generated_question_id: qId,
@@ -551,6 +618,7 @@ function emptyValidation(): GenerationValidationResult {
     satStyle: { result: "fail", questionStemFormat: "fail", choiceFormat: "fail", noProhibitedContent: "pass", correctAnswerDistribution: "pass", issues: ["No question generated"] },
     antiLeakSafeguard: { result: "pass", ngramOverlapScore: 0, structuralLeakageScore: 0, passageLeakageScore: 0, criticalViolations: 0, warningViolations: 0 },
     generationScore: { result: "pass", overallScore: 0, failedMinimums: [] },
+    structuralClone: { result: "pass", matches: [], maxCombinedScore: 0, profile: { patternSignature: "", section: "", hasPassage: false, passageLengthBand: "none", questionStemHash: "", choiceCount: 0, choiceStructureHash: "", correctPosition: "", distractorStrategySet: "", reasoningStepCount: 0, reasoningStepNameHash: "" } },
     allPassed: false,
     failedChecks: ["structure", "difficulty", "distractor"],
   };

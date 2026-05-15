@@ -136,6 +136,36 @@ export interface DuplicateCheckResult {
   fingerprint: Fingerprint;
 }
 
+// -- Structural clone detection --
+
+export interface StructuralCloneMatch {
+  matchedQuestionId: string;
+  structuralSimilarity: number;
+  reasoningFlowSimilarity: number;
+  combinedScore: number;
+}
+
+export interface StructuralCloneProfile {
+  patternSignature: string;
+  section: string;
+  hasPassage: boolean;
+  passageLengthBand: "short" | "medium" | "long" | "none";
+  questionStemHash: string;
+  choiceCount: number;
+  choiceStructureHash: string;
+  correctPosition: string;
+  distractorStrategySet: string;
+  reasoningStepCount: number;
+  reasoningStepNameHash: string;
+}
+
+export interface StructuralCloneResult {
+  result: CheckResult;
+  matches: StructuralCloneMatch[];
+  maxCombinedScore: number;
+  profile: StructuralCloneProfile;
+}
+
 // -- Aggregated validation result --
 
 // -- Explanation coherence check --
@@ -188,6 +218,7 @@ export interface GenerationValidationResult {
   satStyle: SATStyleCheckResult;
   antiLeakSafeguard: AntiLeakSafeguardCheckResult;
   generationScore: GenerationScoreCheckResult;
+  structuralClone: StructuralCloneResult;
   allPassed: boolean;
   failedChecks: string[];
 }
@@ -370,6 +401,87 @@ export interface GenerationJobConfig {
   difficulty: "easy" | "medium" | "hard";
   count: number;
   templateId?: string;
+}
+
+// ============================================================
+// Validation Hardening — Pre-save / Pre-export / Escalation / Audit
+// ============================================================
+
+// -- Pre-save validation gate --
+
+export interface PreSaveCheck {
+  name: string;
+  passed: boolean;
+  reason: string | null;
+}
+
+export interface PreSaveValidationResult {
+  cleared: boolean;
+  checks: PreSaveCheck[];
+  blockedReasons: string[];
+}
+
+// -- Pre-export validation gate --
+
+export interface PreExportCheck {
+  name: string;
+  passed: boolean;
+  reason: string | null;
+}
+
+export interface PreExportValidationResult {
+  cleared: boolean;
+  checks: PreExportCheck[];
+  blockedReasons: string[];
+}
+
+// -- Escalation policy --
+
+export type EscalationLevel = "regenerate" | "review" | "reject";
+
+export interface EscalationEvent {
+  questionId: string | null;
+  fromLevel: EscalationLevel;
+  toLevel: EscalationLevel;
+  reason: string;
+  retryCount: number;
+  timestamp: string;
+}
+
+export interface EscalationDecision {
+  action: GenerationDecision;
+  escalationLevel: EscalationLevel;
+  reason: string;
+  escalationHistory: EscalationEvent[];
+}
+
+// -- Validation audit log --
+
+export type AuditEventType =
+  | "validation_check"
+  | "decision_made"
+  | "retry_attempted"
+  | "escalation_triggered"
+  | "pre_save_gate"
+  | "pre_export_gate"
+  | "anti_leak_check"
+  | "structural_clone_check";
+
+export interface ValidationAuditEntry {
+  id: string;
+  eventType: AuditEventType;
+  targetId: string | null;
+  targetType: "generated_question" | "worksheet" | "generation_job" | null;
+  stage: string;
+  checkName: string | null;
+  result: string | null;
+  score: number | null;
+  decision: string | null;
+  decisionReason: string | null;
+  retryCount: number;
+  escalationLevel: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface QuestionGenerationResult {

@@ -7,6 +7,7 @@ import { validateDistractors } from "@/lib/generation/validators/distractorValid
 import { checkGenerationDedup } from "@/lib/generation/validators/generationDedup";
 import { validateExplanationCoherence } from "@/lib/generation/validators/explanationCoherenceValidator";
 import { validateSATStyle } from "@/lib/generation/validators/satStyleValidator";
+import { detectStructuralClones } from "@/lib/generation/validators/structuralCloneDetector";
 import { checkAntiLeakSafeguards } from "@/lib/generation/antiLeakSafeguards";
 import { scoreGeneration } from "@/lib/generation/generationScorer";
 import { fetchTemplateById } from "@/lib/supabase/fetchTemplates";
@@ -56,12 +57,13 @@ export async function POST(request: NextRequest) {
   const difficulty = (question.mapped_level || "medium") as "easy" | "medium" | "hard";
 
   // Run all validators in parallel where possible
-  const [structureResult, leakageResult, dedupResult, explanationCoherenceResult, satStyleResult] = await Promise.all([
+  const [structureResult, leakageResult, dedupResult, explanationCoherenceResult, satStyleResult, structuralCloneResult] = await Promise.all([
     Promise.resolve(validateStructure(parsed, section, difficulty)),
     detectLeakage(parsed, section),
     checkGenerationDedup(parsed, section, question_id),
     Promise.resolve(validateExplanationCoherence(parsed, section)),
     Promise.resolve(validateSATStyle(parsed, section)),
+    detectStructuralClones(parsed, section, question_id),
   ]);
 
   let difficultyResult, distractorResult;
@@ -113,7 +115,7 @@ export async function POST(request: NextRequest) {
   // Generation scoring
   const generationScore = scoreGeneration(
     parsed,
-    { structure: structureResult, leakage: leakageResult, difficulty: difficultyResult, distractor: distractorResult, dedup: dedupResult, explanationCoherence: explanationCoherenceResult, satStyle: satStyleResult, antiLeakSafeguard: antiLeakCheckResult, generationScore: { result: "pass", overallScore: 0, failedMinimums: [] }, allPassed: false, failedChecks: [] },
+    { structure: structureResult, leakage: leakageResult, difficulty: difficultyResult, distractor: distractorResult, dedup: dedupResult, explanationCoherence: explanationCoherenceResult, satStyle: satStyleResult, antiLeakSafeguard: antiLeakCheckResult, generationScore: { result: "pass", overallScore: 0, failedMinimums: [] }, structuralClone: structuralCloneResult, allPassed: false, failedChecks: [] },
     antiLeakResult,
     section,
     (question.category as import("@/lib/library/types").LibraryCategory),
@@ -135,7 +137,8 @@ export async function POST(request: NextRequest) {
     && antiLeakCheckResult.result === "pass"
     && generationScoreCheckResult.result === "pass"
     && explanationCoherenceResult.result === "pass"
-    && satStyleResult.result === "pass";
+    && satStyleResult.result === "pass"
+    && structuralCloneResult.result === "pass";
 
   const validation = {
     structure: structureResult,
@@ -147,6 +150,7 @@ export async function POST(request: NextRequest) {
     satStyle: satStyleResult,
     antiLeakSafeguard: antiLeakCheckResult,
     generationScore: generationScoreCheckResult,
+    structuralClone: structuralCloneResult,
     allPassed,
     failedChecks: [
       ...(structureResult.result !== "pass" ? ["structure"] : []),
@@ -158,10 +162,11 @@ export async function POST(request: NextRequest) {
       ...(generationScoreCheckResult.result !== "pass" ? ["generation_score"] : []),
       ...(explanationCoherenceResult.result !== "pass" ? ["explanation_coherence"] : []),
       ...(satStyleResult.result !== "pass" ? ["sat_style"] : []),
+      ...(structuralCloneResult.result !== "pass" ? ["structural_clone"] : []),
     ],
   };
 
-  const checkSummary = `structure:${structureResult.result},leakage:${leakageResult.result},difficulty:${difficultyResult.result},distractor:${distractorResult.result},dedup:${dedupResult.result},anti_leak:${antiLeakCheckResult.result},gen_score:${generationScoreCheckResult.result},explanation:${explanationCoherenceResult.result},sat_style:${satStyleResult.result}`;
+  const checkSummary = `structure:${structureResult.result},leakage:${leakageResult.result},difficulty:${difficultyResult.result},distractor:${distractorResult.result},dedup:${dedupResult.result},anti_leak:${antiLeakCheckResult.result},gen_score:${generationScoreCheckResult.result},explanation:${explanationCoherenceResult.result},sat_style:${satStyleResult.result},structural_clone:${structuralCloneResult.result}`;
 
   await saveValidationResult({
     generated_question_id: question_id,

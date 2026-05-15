@@ -52,6 +52,9 @@ export function decideGenerationAction(
   if (validation.generationScore.result === "fail") failedChecks.push("generation_score");
   if (validation.generationScore.result === "review") reviewChecks.push("generation_score");
 
+  if (validation.structuralClone.result === "fail") failedChecks.push("structural_clone");
+  if (validation.structuralClone.result === "review") reviewChecks.push("structural_clone");
+
   if (validation.antiLeakSafeguard.result === "review") reviewChecks.push("anti_leak_safeguard");
 
   if (validation.leakage.result === "review") reviewChecks.push("leakage");
